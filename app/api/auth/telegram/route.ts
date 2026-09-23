@@ -47,7 +47,7 @@ function validateTelegramInitData(initData: string) {
 
   const secretKey = crypto
     .createHmac("sha256", "WebAppData")
-    .update(telegramBotToken)
+    .update(telegramBotToken!)
     .digest();
 
   const calculatedHash = crypto
@@ -73,7 +73,7 @@ function validateTelegramInitData(initData: string) {
 
   const now = Math.floor(Date.now() / 1000);
 
-  // رفض بيانات قديمة جدًا.
+  // رفض بيانات Telegram الأقدم من 24 ساعة.
   if (now - authDate > 86400) {
     return null;
   }
@@ -194,7 +194,6 @@ export async function POST(request: NextRequest) {
 
       user = data;
 
-      // إنشاء الإعدادات الافتراضية للمستخدم الجديد.
       const { error: settingsError } = await supabaseAdmin
         .from("user_settings")
         .insert({
