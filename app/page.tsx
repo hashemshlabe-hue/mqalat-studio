@@ -1,149 +1,72 @@
 "use client";
 
-import {
-  FileText,
-  Send,
-  CalendarClock,
-  Image,
-  Settings,
-  Plus,
-  LayoutDashboard,
-} from "lucide-react";
-
-const menuItems = [
-  { label: "الرئيسية", icon: LayoutDashboard },
-  { label: "المقالات", icon: FileText },
-  { label: "الوسائط", icon: Image },
-  { label: "القنوات", icon: Send },
-  { label: "المجدول", icon: CalendarClock },
-  { label: "الإعدادات", icon: Settings },
-];
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 export default function Home() {
+  const [status, setStatus] = useState("جاري اختبار الاتصال...");
+  const [details, setDetails] = useState("");
+
+  useEffect(() => {
+    async function testConnection() {
+      const { data, error } = await supabase
+        .from("articles")
+        .select("id")
+        .limit(1);
+
+      if (error) {
+        setStatus("فشل الاتصال ❌");
+        setDetails(error.message);
+        return;
+      }
+
+      setStatus("الاتصال ناجح ✅");
+      setDetails(`تم الوصول إلى قاعدة البيانات. عدد النتائج: ${data.length}`);
+    }
+
+    testConnection();
+  }, []);
+
   return (
-    <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">م</div>
-          <div>
-            <strong>مقالات</strong>
-            <span>Article Studio</span>
-          </div>
+    <main
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#f5f7fb",
+        padding: "24px",
+        direction: "rtl",
+        fontFamily: "Arial, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: "20px",
+          padding: "40px",
+          width: "100%",
+          maxWidth: "600px",
+          textAlign: "center",
+          boxShadow: "0 10px 40px rgba(0,0,0,.08)",
+        }}
+      >
+        <h1 style={{ marginBottom: "20px" }}>
+          اختبار اتصال مقالات
+        </h1>
+
+        <div
+          style={{
+            fontSize: "24px",
+            fontWeight: 700,
+            marginBottom: "15px",
+          }}
+        >
+          {status}
         </div>
 
-        <nav className="navigation">
-          {menuItems.map((item, index) => {
-            const Icon = item.icon;
-
-            return (
-              <button
-                key={item.label}
-                className={`nav-item ${index === 0 ? "active" : ""}`}
-              >
-                <Icon size={19} />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-
-        <div className="sidebar-bottom">
-          <div className="status-dot" />
-          <span>النظام يعمل</span>
-        </div>
-      </aside>
-
-      <section className="content">
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">Article Studio</p>
-            <h1>مرحبًا بك 👋</h1>
-            <p className="subtitle">
-              أنشئ مقالاتك ونظّمها وانشرها إلى قنوات Telegram من مكان واحد.
-            </p>
-          </div>
-
-          <button className="primary-button">
-            <Plus size={19} />
-            مقال جديد
-          </button>
-        </header>
-
-        <section className="stats-grid">
-          <div className="stat-card">
-            <div className="stat-icon">
-              <FileText size={21} />
-            </div>
-            <div>
-              <span>المقالات</span>
-              <strong>0</strong>
-            </div>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-icon">
-              <Send size={21} />
-            </div>
-            <div>
-              <span>القنوات</span>
-              <strong>0</strong>
-            </div>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-icon">
-              <CalendarClock size={21} />
-            </div>
-            <div>
-              <span>المجدول</span>
-              <strong>0</strong>
-            </div>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-icon">
-              <Image size={21} />
-            </div>
-            <div>
-              <span>الوسائط</span>
-              <strong>0</strong>
-            </div>
-          </div>
-        </section>
-
-        <section className="welcome-card">
-          <div>
-            <span className="card-label">ابدأ الآن</span>
-            <h2>أنشئ أول مقال لك</h2>
-            <p>
-              محرر متقدم، وسائط، معاينة، حفظ تلقائي، جدولة، وإدارة متعددة
-              للقنوات — كل ذلك داخل منصة واحدة.
-            </p>
-
-            <button className="primary-button">
-              <Plus size={19} />
-              إنشاء مقال
-            </button>
-          </div>
-
-          <div className="editor-preview">
-            <div className="preview-toolbar">
-              <span />
-              <span />
-              <span />
-              <span />
-            </div>
-
-            <div className="preview-lines">
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-            </div>
-          </div>
-        </section>
-      </section>
+        <p style={{ color: "#666" }}>{details}</p>
+      </div>
     </main>
   );
 }
