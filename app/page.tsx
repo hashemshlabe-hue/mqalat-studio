@@ -2,1191 +2,793 @@
 
 import { useEffect, useState } from "react";
 
-type AuthState = "loading" | "success" | "error" | "outside";
-type View = "home" | "editor";
-
-interface UserData {
+type User = {
   id: string;
   telegram_id: number;
-  username: string | null;
-  first_name: string | null;
-  last_name: string | null;
-  language_code: string | null;
-  is_premium: boolean;
-}
+  username?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+};
+
+type Article = {
+  id: string;
+  title: string;
+  slug: string;
+  status: string;
+  category?: string | null;
+  excerpt?: string | null;
+  word_count?: number | null;
+  created_at: string;
+  updated_at: string;
+  published_at?: string | null;
+};
+
+type View = "home" | "editor" | "articles";
 
 export default function Home() {
-  const [status, setStatus] = useState<AuthState>("loading");
-  const [message, setMessage] = useState(
-    "جاري الاتصال بـ Telegram..."
-  );
-
-  const [user, setUser] = useState<UserData | null>(null);
   const [view, setView] = useState<View>("home");
 
   const [initData, setInitData] = useState("");
-
-  /* محرر المقال */
+  const [user, setUser] = useState<User | null>(null);
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [category, setCategory] = useState("");
 
-  const [saving, setSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState("");
-  const [saveError, setSaveError] = useState("");
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [loadingArticles, setLoadingArticles] = useState(false);
 
-  /* =========================================
-     تسجيل الدخول
-  ========================================= */
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
-    async function authenticate() {
-      const webApp = window.Telegram?.WebApp;
+    authenticate();
+  }, []);
 
-      if (!webApp) {
-        setStatus("outside");
-        setMessage(
-          "افتح التطبيق من داخل Telegram حتى يتم تسجيل الدخول تلقائيًا."
-        );
-        return;
+  async function authenticate() {
+    try {
+      const tg = (window as any).Telegram?.WebApp;
+
+      if (tg) {
+        tg.ready();
+        tg.expand();
       }
 
-      webApp.ready();
-      webApp.expand();
-
-      const telegramInitData = webApp.initData;
+      const telegramInitData = tg?.initData;
 
       if (!telegramInitData) {
-        setStatus("error");
-        setMessage(
-          "لم تصل بيانات المصادقة من Telegram."
-        );
+        setMessage("لم يتم العثور على بيانات Telegram.");
         return;
       }
 
       setInitData(telegramInitData);
 
-      try {
-        const response = await fetch(
-          "/api/auth/telegram",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              initData: telegramInitData,
-            }),
-          }
-        );
+      const response = await fetch("/api/auth/telegram", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          initData: telegramInitData,
+        }),
+      });
 
-        const result = await response.json();
+      const data = await response.json();
 
-        if (!response.ok || !result.success) {
-          throw new Error(
-            result.error ||
-              "فشل التحقق من حساب Telegram."
-          );
-        }
-
-        setUser(result.user);
-        setStatus("success");
-        setMessage(
-          "تم تسجيل الدخول بنجاح."
-        );
-      } catch (error) {
-        console.error(
-          "Authentication error:",
-          error
-        );
-
-        setStatus("error");
-
-        setMessage(
-          error instanceof Error
-            ? error.message
-            : "حدث خطأ أثناء تسجيل الدخول."
-        );
+      if (!response.ok || !data.success) {
+        setMessage(data.message || "فشل تسجيل الدخول.");
+        return;
       }
+
+      setUser(data.user);
+    } catch (error) {
+      console.error(error);
+      setMessage("حدث خطأ أثناء تسجيل الدخول.");
+    }
+  }
+
+  async function loadArticles() {
+    if (!initData) {
+      setMessage("بيانات Telegram غير جاهزة.");
+      return;
     }
 
-    authenticate();
-  }, []);
+    setLoadingArticles(true);
+    setMessage("");
 
-  /* =========================================
-     حفظ المقال
-  ========================================= */
+    try {
+      const response = await fetch("/api/articles/my", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          initData,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        setMessage(data.message || "تعذر جلب المقالات.");
+        return;
+      }
+
+      setArticles(data.articles || []);
+      setView("articles");
+    } catch (error) {
+      console.error(error);
+      setMessage("حدث خطأ أثناء جلب المقالات.");
+    } finally {
+      setLoadingArticles(false);
+    }
+  }
 
   async function saveArticle() {
-    setSaveMessage("");
-    setSaveError("");
+    if (!initData) {
+      setMessage("بيانات Telegram غير جاهزة.");
+      return;
+    }
 
     if (!title.trim()) {
-      setSaveError(
-        "اكتب عنوان المقال أولًا."
-      );
+      setMessage("اكتب عنوان المقال أولًا.");
       return;
     }
 
     if (!content.trim()) {
-      setSaveError(
-        "اكتب محتوى المقال أولًا."
-      );
-      return;
-    }
-
-    if (!initData) {
-      setSaveError(
-        "لم يتم العثور على بيانات Telegram."
-      );
+      setMessage("اكتب محتوى المقال أولًا.");
       return;
     }
 
     setSaving(true);
+    setMessage("");
 
     try {
-      const response = await fetch(
-        "/api/articles",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            initData,
-            title,
-            content,
-            category,
-          }),
-        }
-      );
+      const response = await fetch("/api/articles", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          initData,
+          title,
+          content,
+          category,
+        }),
+      });
 
-      const result = await response.json();
+      const data = await response.json();
 
-      if (!response.ok || !result.success) {
-        throw new Error(
-          result.error ||
-            "فشل حفظ المقال."
-        );
+      if (!response.ok || !data.success) {
+        setMessage(data.message || "تعذر حفظ المقال.");
+        return;
       }
 
-      setSaveMessage(
-        "تم حفظ المقال كمسودة بنجاح ✅"
-      );
+      setMessage("تم حفظ المقال كمسودة بنجاح ✅");
 
       setTitle("");
       setContent("");
       setCategory("");
-    } catch (error) {
-      console.error(
-        "Save article error:",
-        error
-      );
 
-      setSaveError(
-        error instanceof Error
-          ? error.message
-          : "حدث خطأ أثناء حفظ المقال."
-      );
+      setTimeout(() => {
+        loadArticles();
+      }, 800);
+    } catch (error) {
+      console.error(error);
+      setMessage("حدث خطأ أثناء حفظ المقال.");
     } finally {
       setSaving(false);
     }
   }
 
-  /* =========================================
-     شاشة التحميل
-  ========================================= */
-
-  if (status === "loading") {
-    return (
-      <main style={styles.centerPage}>
-        <div style={styles.loadingBox}>
-          <div style={styles.logo}>م</div>
-
-          <h1 style={styles.mainTitle}>
-            مقالات
-          </h1>
-
-          <p style={styles.subtitle}>
-            Article Studio
-          </p>
-
-          <div style={styles.statusBox}>
-            <div style={styles.spinner} />
-            <strong>{message}</strong>
-          </div>
-        </div>
-      </main>
-    );
+  function formatDate(date: string) {
+    try {
+      return new Date(date).toLocaleDateString("ar-LY", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+    } catch {
+      return date;
+    }
   }
 
-  /* =========================================
-     شاشة الخطأ
-  ========================================= */
+  function statusText(status: string) {
+    switch (status) {
+      case "draft":
+        return "مسودة";
+      case "published":
+        return "منشور";
+      case "archived":
+        return "مؤرشف";
+      default:
+        return status;
+    }
+  }
 
-  if (
-    status === "error" ||
-    status === "outside"
-  ) {
-    return (
-      <main style={styles.centerPage}>
-        <div style={styles.loadingBox}>
-          <div style={styles.logo}>م</div>
+  function openNewArticle() {
+    setMessage("");
+    setTitle("");
+    setContent("");
+    setCategory("");
+    setView("editor");
+  }
 
-          <h1 style={styles.mainTitle}>
-            مقالات
-          </h1>
-
-          <p style={styles.subtitle}>
-            Article Studio
-          </p>
-
-          <div style={styles.errorBox}>
-            <div style={styles.errorIcon}>
-              !
+  return (
+    <main
+      dir="rtl"
+      style={{
+        minHeight: "100vh",
+        background: "#f5f7fb",
+        color: "#111827",
+        fontFamily:
+          "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 700,
+          margin: "0 auto",
+          minHeight: "100vh",
+          padding: "20px 16px 90px",
+        }}
+      >
+        {/* Header */}
+        <header
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 24,
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: 24,
+                fontWeight: 800,
+              }}
+            >
+              مقالات
             </div>
 
-            <strong>
-              {status === "outside"
-                ? "افتح التطبيق من Telegram"
-                : "تعذر تسجيل الدخول"}
-            </strong>
-
-            <p style={styles.errorText}>
-              {message}
-            </p>
+            <div
+              style={{
+                color: "#6b7280",
+                fontSize: 14,
+                marginTop: 4,
+              }}
+            >
+              Article Studio
+            </div>
           </div>
-        </div>
-      </main>
-    );
-  }
 
-  /* =========================================
-     محرر المقال
-  ========================================= */
-
-  if (view === "editor") {
-    return (
-      <main style={styles.app}>
-        <header style={styles.header}>
-          <button
-            style={styles.backButton}
-            onClick={() => {
-              setView("home");
-              setSaveMessage("");
-              setSaveError("");
+          <div
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: "50%",
+              background: "#111827",
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontWeight: 700,
             }}
           >
-            → الرئيسية
-          </button>
-
-          <div style={styles.headerBrand}>
-            <strong>مقال جديد</strong>
-            <small>Article Studio</small>
+            {user?.first_name?.charAt(0) || "م"}
           </div>
         </header>
 
-        <section style={styles.editorContainer}>
-          <div style={styles.editorIntro}>
-            <span style={styles.editorIcon}>
-              ✍️
-            </span>
-
-            <div>
-              <h1 style={styles.editorTitle}>
-                إنشاء مقال جديد
-              </h1>
-
-              <p style={styles.editorDescription}>
-                اكتب مقالك واحفظه كمسودة للعودة
-                إليه لاحقًا.
-              </p>
-            </div>
-          </div>
-
-          {/* العنوان */}
-
-          <label style={styles.label}>
-            عنوان المقال
-          </label>
-
-          <input
-            value={title}
-            onChange={(e) =>
-              setTitle(e.target.value)
-            }
-            placeholder="اكتب عنوان المقال..."
-            style={styles.titleInput}
-          />
-
-          {/* التصنيف */}
-
-          <label style={styles.label}>
-            التصنيف
-          </label>
-
-          <input
-            value={category}
-            onChange={(e) =>
-              setCategory(e.target.value)
-            }
-            placeholder="مثال: تقنية، أدب، تعليم..."
-            style={styles.input}
-          />
-
-          {/* المحتوى */}
-
-          <label style={styles.label}>
-            محتوى المقال
-          </label>
-
-          <textarea
-            value={content}
-            onChange={(e) =>
-              setContent(e.target.value)
-            }
-            placeholder="ابدأ كتابة مقالك هنا..."
-            style={styles.textarea}
-          />
-
-          <div style={styles.wordCounter}>
-            {content.trim()
-              ? content
-                  .trim()
-                  .split(/\s+/)
-                  .filter(Boolean).length
-              : 0}{" "}
-            كلمة
-          </div>
-
-          {/* الرسائل */}
-
-          {saveError && (
-            <div style={styles.saveError}>
-              {saveError}
-            </div>
-          )}
-
-          {saveMessage && (
-            <div style={styles.saveSuccess}>
-              {saveMessage}
-            </div>
-          )}
-
-          {/* زر الحفظ */}
-
-          <button
-            onClick={saveArticle}
-            disabled={saving}
+        {/* Global message */}
+        {message && (
+          <div
             style={{
-              ...styles.saveButton,
-              opacity: saving ? 0.65 : 1,
+              background: "#ecfdf5",
+              border: "1px solid #a7f3d0",
+              color: "#065f46",
+              borderRadius: 14,
+              padding: "12px 14px",
+              marginBottom: 18,
+              fontSize: 14,
             }}
           >
-            {saving
-              ? "جاري الحفظ..."
-              : "حفظ كمسودة"}
-          </button>
-        </section>
-      </main>
-    );
-  }
-
-  /* =========================================
-     الصفحة الرئيسية
-  ========================================= */
-
-  return (
-    <main style={styles.app}>
-      <header style={styles.header}>
-        <div>
-          <div style={styles.brand}>
-            مقالات
+            {message}
           </div>
+        )}
 
-          <small style={styles.brandSub}>
-            Article Studio
-          </small>
-        </div>
-
-        <div style={styles.avatar}>
-          {user?.first_name?.charAt(0) ||
-            "م"}
-        </div>
-      </header>
-
-      <section style={styles.content}>
-        <div style={styles.welcome}>
-          <p style={styles.smallText}>
-            مرحبًا بعودتك 👋
-          </p>
-
-          <h1 style={styles.welcomeTitle}>
-            {user?.first_name || "صديقي"}
-          </h1>
-
-          <p style={styles.welcomeDescription}>
-            أنشئ مقالاتك ونظّم أفكارك في مكان
-            واحد.
-          </p>
-        </div>
-
-        {/* إنشاء مقال */}
-
-        <button
-          style={styles.createButton}
-          onClick={() => {
-            setView("editor");
-            setSaveMessage("");
-            setSaveError("");
-          }}
-        >
-          <span style={styles.createIcon}>
-            ＋
-          </span>
-
-          <span>
-            <strong
+        {/* HOME */}
+        {view === "home" && (
+          <>
+            <section
               style={{
-                display: "block",
-                fontSize: "17px",
+                background: "#111827",
+                color: "#fff",
+                borderRadius: 24,
+                padding: 24,
+                marginBottom: 18,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 14,
+                  opacity: 0.7,
+                  marginBottom: 8,
+                }}
+              >
+                مرحبًا
+              </div>
+
+              <div
+                style={{
+                  fontSize: 25,
+                  fontWeight: 800,
+                  marginBottom: 10,
+                }}
+              >
+                {user?.first_name || "صاحب المقالات"} 👋
+              </div>
+
+              <div
+                style={{
+                  fontSize: 14,
+                  opacity: 0.75,
+                  lineHeight: 1.7,
+                }}
+              >
+                اكتب مقالاتك ونظّم محتواك من مكان واحد.
+              </div>
+            </section>
+
+            <button
+              onClick={openNewArticle}
+              style={{
+                width: "100%",
+                border: "none",
+                borderRadius: 18,
+                padding: 18,
+                background: "#2563eb",
+                color: "#fff",
+                fontSize: 17,
+                fontWeight: 700,
+                cursor: "pointer",
+                marginBottom: 14,
+              }}
+            >
+              ＋ إنشاء مقال جديد
+            </button>
+
+            <button
+              onClick={loadArticles}
+              style={{
+                width: "100%",
+                border: "1px solid #e5e7eb",
+                borderRadius: 18,
+                padding: 18,
+                background: "#fff",
+                color: "#111827",
+                fontSize: 16,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              {loadingArticles ? "جاري تحميل المقالات..." : "📚 مقالاتي"}
+            </button>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 12,
+                marginTop: 14,
+              }}
+            >
+              <div
+                style={{
+                  background: "#fff",
+                  borderRadius: 18,
+                  padding: 18,
+                  border: "1px solid #e5e7eb",
+                }}
+              >
+                <div style={{ fontSize: 24, marginBottom: 8 }}>🏷️</div>
+                <div style={{ fontWeight: 700 }}>التصنيفات</div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: "#9ca3af",
+                    marginTop: 5,
+                  }}
+                >
+                  قريبًا
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: "#fff",
+                  borderRadius: 18,
+                  padding: 18,
+                  border: "1px solid #e5e7eb",
+                }}
+              >
+                <div style={{ fontSize: 24, marginBottom: 8 }}>⚙️</div>
+                <div style={{ fontWeight: 700 }}>الإعدادات</div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: "#9ca3af",
+                    marginTop: 5,
+                  }}
+                >
+                  قريبًا
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* EDITOR */}
+        {view === "editor" && (
+          <>
+            <button
+              onClick={() => setView("home")}
+              style={{
+                border: "none",
+                background: "transparent",
+                padding: 0,
+                marginBottom: 20,
+                fontSize: 15,
+                cursor: "pointer",
+                color: "#2563eb",
+              }}
+            >
+              ← العودة للرئيسية
+            </button>
+
+            <h1
+              style={{
+                fontSize: 26,
+                marginBottom: 20,
               }}
             >
               إنشاء مقال جديد
-            </strong>
+            </h1>
 
-            <small
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="عنوان المقال"
               style={{
-                opacity: 0.75,
+                width: "100%",
+                boxSizing: "border-box",
+                padding: 16,
+                borderRadius: 14,
+                border: "1px solid #d1d5db",
+                fontSize: 17,
+                marginBottom: 12,
+                outline: "none",
+              }}
+            />
+
+            <input
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              placeholder="التصنيف (اختياري)"
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: 15,
+                borderRadius: 14,
+                border: "1px solid #d1d5db",
+                fontSize: 15,
+                marginBottom: 12,
+                outline: "none",
+              }}
+            />
+
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="اكتب محتوى المقال هنا..."
+              rows={14}
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: 16,
+                borderRadius: 14,
+                border: "1px solid #d1d5db",
+                fontSize: 16,
+                lineHeight: 1.9,
+                resize: "vertical",
+                outline: "none",
+                marginBottom: 14,
+              }}
+            />
+
+            <button
+              onClick={saveArticle}
+              disabled={saving}
+              style={{
+                width: "100%",
+                border: "none",
+                borderRadius: 16,
+                padding: 17,
+                background: saving ? "#93c5fd" : "#2563eb",
+                color: "#fff",
+                fontSize: 16,
+                fontWeight: 700,
+                cursor: saving ? "default" : "pointer",
               }}
             >
-              ابدأ كتابة مقال جديد
-            </small>
-          </span>
+              {saving ? "جاري الحفظ..." : "حفظ كمسودة"}
+            </button>
+          </>
+        )}
 
-          <span style={styles.arrow}>
-            ←
-          </span>
-        </button>
-
-        {/* الإحصائيات */}
-
-        <div style={styles.sectionTitle}>
-          <h2>نظرة سريعة</h2>
-        </div>
-
-        <div style={styles.statsGrid}>
-          <div style={styles.statCard}>
-            <div style={styles.statIcon}>
-              📝
-            </div>
-
-            <strong style={styles.statNumber}>
-              0
-            </strong>
-
-            <span style={styles.statLabel}>
-              المقالات
-            </span>
-          </div>
-
-          <div style={styles.statCard}>
-            <div style={styles.statIcon}>
-              📂
-            </div>
-
-            <strong style={styles.statNumber}>
-              0
-            </strong>
-
-            <span style={styles.statLabel}>
-              المسودات
-            </span>
-          </div>
-
-          <div style={styles.statCard}>
-            <div style={styles.statIcon}>
-              ⭐
-            </div>
-
-            <strong style={styles.statNumber}>
-              0
-            </strong>
-
-            <span style={styles.statLabel}>
-              المفضلة
-            </span>
-          </div>
-        </div>
-
-        {/* أدوات */}
-
-        <div style={styles.sectionTitle}>
-          <h2>الوصول السريع</h2>
-        </div>
-
-        <div style={styles.toolsGrid}>
-          <button
-            style={styles.toolCard}
-            onClick={() =>
-              alert(
-                "سنربط هذا القسم بالمقالات المحفوظة في الخطوة التالية."
-              )
-            }
-          >
-            <span style={styles.toolIcon}>
-              📚
-            </span>
-
-            <strong>مقالاتي</strong>
-
-            <small>
-              عرض المقالات والمسودات
-            </small>
-          </button>
-
-          <button
-            style={styles.toolCard}
-            onClick={() =>
-              alert(
-                "سنربط التصنيفات بقاعدة البيانات لاحقًا."
-              )
-            }
-          >
-            <span style={styles.toolIcon}>
-              🗂️
-            </span>
-
-            <strong>التصنيفات</strong>
-
-            <small>
-              تنظيم المقالات
-            </small>
-          </button>
-
-          <button
-            style={styles.toolCard}
-            onClick={() =>
-              alert(
-                "سنضيف البحث في الخطوة التالية."
-              )
-            }
-          >
-            <span style={styles.toolIcon}>
-              🔎
-            </span>
-
-            <strong>البحث</strong>
-
-            <small>
-              البحث في المقالات
-            </small>
-          </button>
-
-          <button
-            style={styles.toolCard}
-            onClick={() =>
-              alert(
-                "سنضيف الإعدادات لاحقًا."
-              )
-            }
-          >
-            <span style={styles.toolIcon}>
-              ⚙️
-            </span>
-
-            <strong>الإعدادات</strong>
-
-            <small>
-              إعدادات الحساب
-            </small>
-          </button>
-        </div>
-
-        {/* الحساب */}
-
-        <div style={styles.accountCard}>
-          <div style={styles.accountAvatar}>
-            {user?.first_name?.charAt(0) ||
-              "م"}
-          </div>
-
-          <div style={{ flex: 1 }}>
-            <strong>
-              {user?.first_name || ""}{" "}
-              {user?.last_name || ""}
-            </strong>
-
-            {user?.username && (
-              <p
-                style={
-                  styles.accountUsername
-                }
+        {/* ARTICLES */}
+        {view === "articles" && (
+          <>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 20,
+              }}
+            >
+              <button
+                onClick={() => setView("home")}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  padding: 0,
+                  fontSize: 15,
+                  cursor: "pointer",
+                  color: "#2563eb",
+                }}
               >
-                @{user.username}
-              </p>
+                ← الرئيسية
+              </button>
+
+              <h1
+                style={{
+                  fontSize: 25,
+                  margin: 0,
+                }}
+              >
+                مقالاتي
+              </h1>
+            </div>
+
+            <button
+              onClick={openNewArticle}
+              style={{
+                width: "100%",
+                border: "none",
+                borderRadius: 16,
+                padding: 15,
+                background: "#2563eb",
+                color: "#fff",
+                fontSize: 15,
+                fontWeight: 700,
+                cursor: "pointer",
+                marginBottom: 16,
+              }}
+            >
+              ＋ إنشاء مقال جديد
+            </button>
+
+            {loadingArticles ? (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: 40,
+                  color: "#6b7280",
+                }}
+              >
+                جاري تحميل المقالات...
+              </div>
+            ) : articles.length === 0 ? (
+              <div
+                style={{
+                  background: "#fff",
+                  borderRadius: 20,
+                  padding: 35,
+                  textAlign: "center",
+                  border: "1px solid #e5e7eb",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 42,
+                    marginBottom: 12,
+                  }}
+                >
+                  📝
+                </div>
+
+                <div
+                  style={{
+                    fontWeight: 700,
+                    fontSize: 18,
+                    marginBottom: 8,
+                  }}
+                >
+                  لا توجد مقالات بعد
+                </div>
+
+                <div
+                  style={{
+                    color: "#6b7280",
+                    fontSize: 14,
+                  }}
+                >
+                  أنشئ أول مقال لك وسيظهر هنا.
+                </div>
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                }}
+              >
+                {articles.map((article) => (
+                  <div
+                    key={article.id}
+                    style={{
+                      background: "#fff",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 20,
+                      padding: 18,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        alignItems: "flex-start",
+                      }}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <div
+                          style={{
+                            fontSize: 18,
+                            fontWeight: 800,
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          {article.title || "بدون عنوان"}
+                        </div>
+
+                        {article.excerpt && (
+                          <div
+                            style={{
+                              color: "#6b7280",
+                              fontSize: 13,
+                              lineHeight: 1.7,
+                              marginTop: 7,
+                            }}
+                          >
+                            {article.excerpt}
+                          </div>
+                        )}
+                      </div>
+
+                      <span
+                        style={{
+                          background: "#fef3c7",
+                          color: "#92400e",
+                          padding: "5px 9px",
+                          borderRadius: 10,
+                          fontSize: 12,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {statusText(article.status)}
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 8,
+                        marginTop: 14,
+                        color: "#6b7280",
+                        fontSize: 12,
+                      }}
+                    >
+                      {article.category && (
+                        <span>🏷️ {article.category}</span>
+                      )}
+
+                      <span>
+                        📅 {formatDate(article.updated_at)}
+                      </span>
+
+                      <span>
+                        📝 {article.word_count || 0} كلمة
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
-          </div>
+          </>
+        )}
+      </div>
 
-          {user?.is_premium && (
-            <span style={styles.premium}>
-              Premium
-            </span>
-          )}
-        </div>
-      </section>
-
-      {/* التنقل السفلي */}
-
-      <nav style={styles.bottomNav}>
-        <button
-          style={styles.navItemActive}
-        >
-          <span>⌂</span>
-          <small>الرئيسية</small>
-        </button>
-
-        <button
-          style={styles.navItem}
-          onClick={() =>
-            alert(
-              "سنربطها بالمقالات الحقيقية قريبًا."
-            )
-          }
-        >
-          <span>▤</span>
-          <small>مقالاتي</small>
-        </button>
-
-        <button
-          style={styles.navCreate}
-          onClick={() => {
-            setView("editor");
-            setSaveMessage("");
-            setSaveError("");
+      {/* Bottom navigation */}
+      <nav
+        style={{
+          position: "fixed",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          background: "rgba(255,255,255,0.96)",
+          borderTop: "1px solid #e5e7eb",
+          padding: "10px 16px",
+          display: "flex",
+          justifyContent: "center",
+          backdropFilter: "blur(10px)",
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 700,
+            display: "flex",
+            justifyContent: "space-around",
           }}
         >
-          ＋
-        </button>
+          <button
+            onClick={() => setView("home")}
+            style={{
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            🏠
+            <div>الرئيسية</div>
+          </button>
 
-        <button
-          style={styles.navItem}
-          onClick={() =>
-            alert(
-              "سنضيف المفضلة لاحقًا."
-            )
-          }
-        >
-          <span>☆</span>
-          <small>المفضلة</small>
-        </button>
+          <button
+            onClick={openNewArticle}
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: "50%",
+              border: "none",
+              background: "#2563eb",
+              color: "#fff",
+              fontSize: 24,
+              cursor: "pointer",
+              marginTop: -25,
+            }}
+          >
+            +
+          </button>
 
-        <button
-          style={styles.navItem}
-          onClick={() =>
-            alert(
-              "سنضيف الإعدادات لاحقًا."
-            )
-          }
-        >
-          <span>⚙</span>
-          <small>الإعدادات</small>
-        </button>
+          <button
+            onClick={loadArticles}
+            style={{
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            📚
+            <div>مقالاتي</div>
+          </button>
+        </div>
       </nav>
     </main>
   );
 }
-
-/* =========================================
-   التصميم
-========================================= */
-
-const styles: Record<
-  string,
-  React.CSSProperties
-> = {
-  centerPage: {
-    minHeight: "100vh",
-    background: "#f5f7fb",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    direction: "rtl",
-    fontFamily:
-      "Arial, Helvetica, sans-serif",
-    padding: "24px",
-    boxSizing: "border-box",
-  },
-
-  loadingBox: {
-    width: "100%",
-    maxWidth: "480px",
-    textAlign: "center",
-  },
-
-  logo: {
-    width: "72px",
-    height: "72px",
-    borderRadius: "22px",
-    background: "#111827",
-    color: "#fff",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    margin: "0 auto 18px",
-    fontSize: "32px",
-    fontWeight: 800,
-  },
-
-  mainTitle: {
-    margin: 0,
-    fontSize: "30px",
-    fontWeight: 800,
-  },
-
-  subtitle: {
-    margin: "7px 0 30px",
-    color: "#6b7280",
-  },
-
-  statusBox: {
-    background: "#fff",
-    borderRadius: "18px",
-    padding: "22px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "12px",
-  },
-
-  spinner: {
-    width: "20px",
-    height: "20px",
-    borderRadius: "50%",
-    border: "3px solid #e5e7eb",
-    borderTopColor: "#111827",
-  },
-
-  errorBox: {
-    background: "#fff",
-    borderRadius: "20px",
-    padding: "25px",
-  },
-
-  errorIcon: {
-    margin: "0 auto 14px",
-    width: "45px",
-    height: "45px",
-    borderRadius: "50%",
-    background: "#fee2e2",
-    color: "#dc2626",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 800,
-    fontSize: "22px",
-  },
-
-  errorText: {
-    color: "#6b7280",
-    lineHeight: 1.8,
-  },
-
-  app: {
-    minHeight: "100vh",
-    background: "#f5f7fb",
-    direction: "rtl",
-    fontFamily:
-      "Arial, Helvetica, sans-serif",
-    paddingBottom: "90px",
-    color: "#111827",
-  },
-
-  header: {
-    background: "#fff",
-    padding: "16px 20px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderBottom:
-      "1px solid #eef0f4",
-    position: "sticky",
-    top: 0,
-    zIndex: 20,
-  },
-
-  headerBrand: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "3px",
-  },
-
-  headerBrandSmall: {
-    color: "#9ca3af",
-  },
-
-  backButton: {
-    background: "#f3f4f6",
-    border: 0,
-    borderRadius: "12px",
-    padding: "10px 13px",
-    cursor: "pointer",
-    color: "#111827",
-    fontWeight: 700,
-  },
-
-  brand: {
-    fontSize: "21px",
-    fontWeight: 900,
-  },
-
-  brandSub: {
-    color: "#9ca3af",
-    fontSize: "11px",
-  },
-
-  avatar: {
-    width: "42px",
-    height: "42px",
-    borderRadius: "14px",
-    background: "#111827",
-    color: "#fff",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 800,
-  },
-
-  content: {
-    width: "100%",
-    maxWidth: "760px",
-    margin: "0 auto",
-    padding: "26px 18px",
-    boxSizing: "border-box",
-  },
-
-  editorContainer: {
-    width: "100%",
-    maxWidth: "800px",
-    margin: "0 auto",
-    padding: "24px 18px",
-    boxSizing: "border-box",
-  },
-
-  editorIntro: {
-    display: "flex",
-    alignItems: "center",
-    gap: "13px",
-    marginBottom: "26px",
-  },
-
-  editorIcon: {
-    width: "50px",
-    height: "50px",
-    borderRadius: "16px",
-    background: "#111827",
-    color: "#fff",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "23px",
-  },
-
-  editorTitle: {
-    margin: 0,
-    fontSize: "24px",
-  },
-
-  editorDescription: {
-    margin: "5px 0 0",
-    color: "#6b7280",
-    fontSize: "13px",
-  },
-
-  label: {
-    display: "block",
-    fontWeight: 800,
-    margin: "18px 0 8px",
-    fontSize: "14px",
-  },
-
-  titleInput: {
-    width: "100%",
-    boxSizing: "border-box",
-    border: "1px solid #e5e7eb",
-    background: "#fff",
-    borderRadius: "16px",
-    padding: "17px",
-    fontSize: "19px",
-    outline: "none",
-    direction: "rtl",
-  },
-
-  input: {
-    width: "100%",
-    boxSizing: "border-box",
-    border: "1px solid #e5e7eb",
-    background: "#fff",
-    borderRadius: "15px",
-    padding: "15px",
-    fontSize: "15px",
-    outline: "none",
-    direction: "rtl",
-  },
-
-  textarea: {
-    width: "100%",
-    minHeight: "320px",
-    boxSizing: "border-box",
-    resize: "vertical",
-    border: "1px solid #e5e7eb",
-    background: "#fff",
-    borderRadius: "18px",
-    padding: "17px",
-    fontSize: "16px",
-    lineHeight: 1.9,
-    outline: "none",
-    direction: "rtl",
-    fontFamily:
-      "Arial, Helvetica, sans-serif",
-  },
-
-  wordCounter: {
-    color: "#9ca3af",
-    fontSize: "12px",
-    marginTop: "7px",
-  },
-
-  saveButton: {
-    width: "100%",
-    marginTop: "18px",
-    border: 0,
-    borderRadius: "16px",
-    padding: "17px",
-    background: "#111827",
-    color: "#fff",
-    fontSize: "16px",
-    fontWeight: 800,
-    cursor: "pointer",
-  },
-
-  saveSuccess: {
-    marginTop: "15px",
-    background: "#ecfdf5",
-    color: "#047857",
-    borderRadius: "14px",
-    padding: "13px",
-    fontSize: "14px",
-    fontWeight: 700,
-  },
-
-  saveError: {
-    marginTop: "15px",
-    background: "#fef2f2",
-    color: "#b91c1c",
-    borderRadius: "14px",
-    padding: "13px",
-    fontSize: "14px",
-    fontWeight: 700,
-  },
-
-  welcome: {
-    marginBottom: "22px",
-  },
-
-  smallText: {
-    color: "#6b7280",
-    margin: "0 0 6px",
-  },
-
-  welcomeTitle: {
-    margin: 0,
-    fontSize: "29px",
-    fontWeight: 900,
-  },
-
-  welcomeDescription: {
-    color: "#6b7280",
-    lineHeight: 1.7,
-    margin: "9px 0 0",
-  },
-
-  createButton: {
-    width: "100%",
-    border: 0,
-    borderRadius: "20px",
-    padding: "19px",
-    background: "#111827",
-    color: "#fff",
-    display: "flex",
-    alignItems: "center",
-    gap: "14px",
-    textAlign: "right",
-    cursor: "pointer",
-  },
-
-  createIcon: {
-    width: "46px",
-    height: "46px",
-    borderRadius: "15px",
-    background:
-      "rgba(255,255,255,.12)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "27px",
-  },
-
-  arrow: {
-    marginRight: "auto",
-    fontSize: "20px",
-  },
-
-  sectionTitle: {
-    marginTop: "30px",
-    marginBottom: "13px",
-  },
-
-  statsGrid: {
-    display: "grid",
-    gridTemplateColumns:
-      "repeat(3, 1fr)",
-    gap: "10px",
-  },
-
-  statCard: {
-    background: "#fff",
-    borderRadius: "18px",
-    padding: "16px 10px",
-    textAlign: "center",
-  },
-
-  statIcon: {
-    fontSize: "20px",
-    marginBottom: "8px",
-  },
-
-  statNumber: {
-    display: "block",
-    fontSize: "21px",
-  },
-
-  statLabel: {
-    display: "block",
-    color: "#9ca3af",
-    fontSize: "12px",
-    marginTop: "4px",
-  },
-
-  toolsGrid: {
-    display: "grid",
-    gridTemplateColumns:
-      "repeat(2, 1fr)",
-    gap: "10px",
-  },
-
-  toolCard: {
-    background: "#fff",
-    border: "1px solid #eef0f4",
-    borderRadius: "18px",
-    padding: "18px 15px",
-    textAlign: "right",
-    cursor: "pointer",
-    color: "#111827",
-  },
-
-  toolIcon: {
-    display: "block",
-    fontSize: "23px",
-    marginBottom: "12px",
-  },
-
-  accountCard: {
-    marginTop: "26px",
-    background: "#fff",
-    borderRadius: "20px",
-    padding: "15px",
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-  },
-
-  accountAvatar: {
-    width: "45px",
-    height: "45px",
-    borderRadius: "15px",
-    background: "#f3f4f6",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 800,
-  },
-
-  accountUsername: {
-    margin: "4px 0 0",
-    color: "#9ca3af",
-    fontSize: "12px",
-  },
-
-  premium: {
-    background: "#f3f4f6",
-    borderRadius: "10px",
-    padding: "6px 9px",
-    fontSize: "10px",
-    fontWeight: 700,
-  },
-
-  bottomNav: {
-    position: "fixed",
-    bottom: 0,
-    right: 0,
-    left: 0,
-    height: "70px",
-    background:
-      "rgba(255,255,255,.96)",
-    borderTop:
-      "1px solid #e5e7eb",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-around",
-    zIndex: 30,
-  },
-
-  navItem: {
-    background: "none",
-    border: 0,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: "4px",
-    color: "#9ca3af",
-    cursor: "pointer",
-    fontSize: "19px",
-  },
-
-  navItemActive: {
-    background: "none",
-    border: 0,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: "4px",
-    color: "#111827",
-    cursor: "pointer",
-    fontSize: "19px",
-    fontWeight: 800,
-  },
-
-  navCreate: {
-    width: "48px",
-    height: "48px",
-    borderRadius: "16px",
-    border: 0,
-    background: "#111827",
-    color: "#fff",
-    fontSize: "27px",
-    cursor: "pointer",
-    marginTop: "-25px",
-  },
-};
