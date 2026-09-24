@@ -34,7 +34,7 @@ export default function RichEditor({
       }),
     ],
 
-    content: value,
+    content: value || "",
 
     immediatelyRender: false,
 
@@ -43,7 +43,6 @@ export default function RichEditor({
     },
   });
 
-  // تحديث محتوى المحرر عند فتح مقال آخر
   useEffect(() => {
     if (!editor) return;
 
@@ -101,12 +100,9 @@ export default function RichEditor({
       const result = await response.json();
 
       if (!response.ok || !result.success || !result.url) {
-        throw new Error(
-          result.error || "فشل رفع الصورة"
-        );
+        throw new Error(result.error || "فشل رفع الصورة");
       }
 
-      // إدخال الصورة في مكان المؤشر
       editor
         .chain()
         .focus()
@@ -124,7 +120,6 @@ export default function RichEditor({
           : "حدث خطأ أثناء رفع الصورة."
       );
     } finally {
-      // السماح باختيار نفس الصورة مرة أخرى
       event.target.value = "";
     }
   }
@@ -153,7 +148,6 @@ export default function RichEditor({
         background: "#fff",
       }}
     >
-      {/* شريط الأدوات */}
       <div
         style={{
           display: "flex",
@@ -166,17 +160,13 @@ export default function RichEditor({
       >
         <button
           type="button"
-          onClick={() =>
-            editor.chain().focus().toggleBold().run()
-          }
+          onClick={() => editor.chain().focus().toggleBold().run()}
           style={{
             padding: "7px 10px",
             fontWeight: "bold",
             borderRadius: "6px",
             border: "1px solid #ccc",
-            background: editor.isActive("bold")
-              ? "#ddd"
-              : "#fff",
+            background: editor.isActive("bold") ? "#ddd" : "#fff",
           }}
         >
           B
@@ -184,17 +174,13 @@ export default function RichEditor({
 
         <button
           type="button"
-          onClick={() =>
-            editor.chain().focus().toggleItalic().run()
-          }
+          onClick={() => editor.chain().focus().toggleItalic().run()}
           style={{
             padding: "7px 10px",
             fontStyle: "italic",
             borderRadius: "6px",
             border: "1px solid #ccc",
-            background: editor.isActive("italic")
-              ? "#ddd"
-              : "#fff",
+            background: editor.isActive("italic") ? "#ddd" : "#fff",
           }}
         >
           I
@@ -202,17 +188,13 @@ export default function RichEditor({
 
         <button
           type="button"
-          onClick={() =>
-            editor.chain().focus().toggleUnderline().run()
-          }
+          onClick={() => editor.chain().focus().toggleUnderline().run()}
           style={{
             padding: "7px 10px",
             textDecoration: "underline",
             borderRadius: "6px",
             border: "1px solid #ccc",
-            background: editor.isActive("underline")
-              ? "#ddd"
-              : "#fff",
+            background: editor.isActive("underline") ? "#ddd" : "#fff",
           }}
         >
           U
@@ -300,11 +282,7 @@ export default function RichEditor({
             const url = window.prompt("أدخل الرابط:");
 
             if (url) {
-              editor
-                .chain()
-                .focus()
-                .setLink({ href: url })
-                .run();
+              editor.chain().focus().setLink({ href: url }).run();
             }
           }}
           style={{
@@ -316,7 +294,6 @@ export default function RichEditor({
           🔗
         </button>
 
-        {/* زر الصورة */}
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
@@ -331,7 +308,6 @@ export default function RichEditor({
           🖼️ صورة
         </button>
 
-        {/* input مخفي */}
         <input
           ref={fileInputRef}
           type="file"
@@ -342,9 +318,7 @@ export default function RichEditor({
 
         <button
           type="button"
-          onClick={() =>
-            editor.chain().focus().undo().run()
-          }
+          onClick={() => editor.chain().focus().undo().run()}
           style={{
             padding: "7px 10px",
             borderRadius: "6px",
@@ -356,9 +330,7 @@ export default function RichEditor({
 
         <button
           type="button"
-          onClick={() =>
-            editor.chain().focus().redo().run()
-          }
+          onClick={() => editor.chain().focus().redo().run()}
           style={{
             padding: "7px 10px",
             borderRadius: "6px",
@@ -369,7 +341,6 @@ export default function RichEditor({
         </button>
       </div>
 
-      {/* منطقة الكتابة */}
       <div
         style={{
           padding: "16px",
