@@ -1,19 +1,25 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
+import Image from "@tiptap/extension-image";
 
 type RichEditorProps = {
   value: string;
   onChange: (value: string) => void;
+  initData?: string;
 };
 
 export default function RichEditor({
   value,
   onChange,
+  initData,
 }: RichEditorProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -21,7 +27,10 @@ export default function RichEditor({
       Link.configure({
         openOnClick: false,
         autolink: true,
-        defaultProtocol: "https",
+      }),
+      Image.configure({
+        inline: false,
+        allowBase64: false,
       }),
     ],
 
@@ -34,15 +43,100 @@ export default function RichEditor({
     },
   });
 
+  // تحديث محتوى المحرر عند فتح مقال آخر
+  useEffect(() => {
+    if (!editor) return;
+
+    const currentContent = editor.getHTML();
+
+    if (value !== currentContent) {
+      editor.commands.setContent(value || "", {
+        emitUpdate: false,
+      });
+    }
+  }, [value, editor]);
+
+  async function handleImageUpload(
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    if (!initData) {
+      alert("لم يتم العثور على بيانات Telegram.");
+      event.target.value = "";
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      alert("يرجى اختيار صورة فقط.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert("حجم الصورة يجب ألا يتجاوز 10MB.");
+      event.target.value = "";
+      return;
+    }
+
+    if (!editor) {
+      alert("المحرر غير جاهز.");
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+
+      formData.append("file", file);
+      formData.append("initData", initData);
+
+      const response = await fetch("/api/media/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success || !result.url) {
+        throw new Error(
+          result.error || "فشل رفع الصورة"
+        );
+      }
+
+      // إدخال الصورة في مكان المؤشر
+      editor
+        .chain()
+        .focus()
+        .setImage({
+          src: result.url,
+          alt: file.name,
+        })
+        .run();
+    } catch (error) {
+      console.error("Image upload error:", error);
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : "حدث خطأ أثناء رفع الصورة."
+      );
+    } finally {
+      // السماح باختيار نفس الصورة مرة أخرى
+      event.target.value = "";
+    }
+  }
+
   if (!editor) {
     return (
       <div
         style={{
-          minHeight: 300,
-          padding: 15,
-          border: "1px solid #e2e8f0",
-          borderRadius: 12,
-          color: "#94a3b8",
+          border: "1px solid #ddd",
+          borderRadius: "12px",
+          padding: "20px",
+          minHeight: "300px",
         }}
       >
         جارٍ تحميل المحرر...
@@ -50,78 +144,39 @@ export default function RichEditor({
     );
   }
 
-  const setLink = () => {
-    const previousUrl =
-      editor.getAttributes("link").href;
-
-    const url = window.prompt(
-      "أدخل الرابط:",
-      previousUrl || "https://"
-    );
-
-    if (url === null) {
-      return;
-    }
-
-    if (url === "") {
-      editor
-        .chain()
-        .focus()
-        .unsetLink()
-        .run();
-
-      return;
-    }
-
-    editor
-      .chain()
-      .focus()
-      .setLink({
-        href: url,
-      })
-      .run();
-  };
-
   return (
     <div
       style={{
-        border: "1px solid #e2e8f0",
-        borderRadius: 14,
+        border: "1px solid #ddd",
+        borderRadius: "12px",
         overflow: "hidden",
-        background: "#ffffff",
+        background: "#fff",
       }}
     >
-      {/* Toolbar */}
-
+      {/* شريط الأدوات */}
       <div
         style={{
           display: "flex",
           flexWrap: "wrap",
-          gap: 6,
-          padding: 10,
-          borderBottom:
-            "1px solid #e2e8f0",
-          background: "#f8fafc",
+          gap: "6px",
+          padding: "10px",
+          borderBottom: "1px solid #ddd",
+          background: "#f8f8f8",
         }}
       >
         <button
           type="button"
           onClick={() =>
-            editor
-              .chain()
-              .focus()
-              .toggleBold()
-              .run()
+            editor.chain().focus().toggleBold().run()
           }
           style={{
-            padding: "8px 11px",
-            borderRadius: 8,
-            border: "1px solid #e2e8f0",
-            background: editor.isActive("bold")
-              ? "#e2e8f0"
-              : "#ffffff",
-            cursor: "pointer",
+            padding: "7px 10px",
             fontWeight: "bold",
+            borderRadius: "6px",
+            border: "1px solid #ccc",
+            background: editor.isActive("bold")
+              ? "#ddd"
+              : "#fff",
           }}
         >
           B
@@ -130,23 +185,16 @@ export default function RichEditor({
         <button
           type="button"
           onClick={() =>
-            editor
-              .chain()
-              .focus()
-              .toggleItalic()
-              .run()
+            editor.chain().focus().toggleItalic().run()
           }
           style={{
-            padding: "8px 11px",
-            borderRadius: 8,
-            border: "1px solid #e2e8f0",
-            background: editor.isActive(
-              "italic"
-            )
-              ? "#e2e8f0"
-              : "#ffffff",
-            cursor: "pointer",
+            padding: "7px 10px",
             fontStyle: "italic",
+            borderRadius: "6px",
+            border: "1px solid #ccc",
+            background: editor.isActive("italic")
+              ? "#ddd"
+              : "#fff",
           }}
         >
           I
@@ -155,23 +203,16 @@ export default function RichEditor({
         <button
           type="button"
           onClick={() =>
-            editor
-              .chain()
-              .focus()
-              .toggleUnderline()
-              .run()
+            editor.chain().focus().toggleUnderline().run()
           }
           style={{
-            padding: "8px 11px",
-            borderRadius: 8,
-            border: "1px solid #e2e8f0",
-            background: editor.isActive(
-              "underline"
-            )
-              ? "#e2e8f0"
-              : "#ffffff",
-            cursor: "pointer",
+            padding: "7px 10px",
             textDecoration: "underline",
+            borderRadius: "6px",
+            border: "1px solid #ccc",
+            background: editor.isActive("underline")
+              ? "#ddd"
+              : "#fff",
           }}
         >
           U
@@ -180,26 +221,15 @@ export default function RichEditor({
         <button
           type="button"
           onClick={() =>
-            editor
-              .chain()
-              .focus()
-              .toggleHeading({
-                level: 2,
-              })
-              .run()
+            editor.chain().focus().toggleHeading({ level: 2 }).run()
           }
           style={{
-            padding: "8px 11px",
-            borderRadius: 8,
-            border: "1px solid #e2e8f0",
-            background: editor.isActive(
-              "heading",
-              { level: 2 }
-            )
-              ? "#e2e8f0"
-              : "#ffffff",
-            cursor: "pointer",
-            fontWeight: "bold",
+            padding: "7px 10px",
+            borderRadius: "6px",
+            border: "1px solid #ccc",
+            background: editor.isActive("heading", { level: 2 })
+              ? "#ddd"
+              : "#fff",
           }}
         >
           H2
@@ -208,26 +238,15 @@ export default function RichEditor({
         <button
           type="button"
           onClick={() =>
-            editor
-              .chain()
-              .focus()
-              .toggleHeading({
-                level: 3,
-              })
-              .run()
+            editor.chain().focus().toggleHeading({ level: 3 }).run()
           }
           style={{
-            padding: "8px 11px",
-            borderRadius: 8,
-            border: "1px solid #e2e8f0",
-            background: editor.isActive(
-              "heading",
-              { level: 3 }
-            )
-              ? "#e2e8f0"
-              : "#ffffff",
-            cursor: "pointer",
-            fontWeight: "bold",
+            padding: "7px 10px",
+            borderRadius: "6px",
+            border: "1px solid #ccc",
+            background: editor.isActive("heading", { level: 3 })
+              ? "#ddd"
+              : "#fff",
           }}
         >
           H3
@@ -236,22 +255,12 @@ export default function RichEditor({
         <button
           type="button"
           onClick={() =>
-            editor
-              .chain()
-              .focus()
-              .toggleBulletList()
-              .run()
+            editor.chain().focus().toggleBulletList().run()
           }
           style={{
-            padding: "8px 11px",
-            borderRadius: 8,
-            border: "1px solid #e2e8f0",
-            background: editor.isActive(
-              "bulletList"
-            )
-              ? "#e2e8f0"
-              : "#ffffff",
-            cursor: "pointer",
+            padding: "7px 10px",
+            borderRadius: "6px",
+            border: "1px solid #ccc",
           }}
         >
           • قائمة
@@ -260,22 +269,12 @@ export default function RichEditor({
         <button
           type="button"
           onClick={() =>
-            editor
-              .chain()
-              .focus()
-              .toggleOrderedList()
-              .run()
+            editor.chain().focus().toggleOrderedList().run()
           }
           style={{
-            padding: "8px 11px",
-            borderRadius: 8,
-            border: "1px solid #e2e8f0",
-            background: editor.isActive(
-              "orderedList"
-            )
-              ? "#e2e8f0"
-              : "#ffffff",
-            cursor: "pointer",
+            padding: "7px 10px",
+            borderRadius: "6px",
+            border: "1px solid #ccc",
           }}
         >
           1. قائمة
@@ -284,60 +283,72 @@ export default function RichEditor({
         <button
           type="button"
           onClick={() =>
-            editor
-              .chain()
-              .focus()
-              .toggleBlockquote()
-              .run()
+            editor.chain().focus().toggleBlockquote().run()
           }
           style={{
-            padding: "8px 11px",
-            borderRadius: 8,
-            border: "1px solid #e2e8f0",
-            background: editor.isActive(
-              "blockquote"
-            )
-              ? "#e2e8f0"
-              : "#ffffff",
-            cursor: "pointer",
+            padding: "7px 10px",
+            borderRadius: "6px",
+            border: "1px solid #ccc",
           }}
         >
-          ❝ اقتباس
+          ❝
         </button>
 
         <button
           type="button"
-          onClick={setLink}
+          onClick={() => {
+            const url = window.prompt("أدخل الرابط:");
+
+            if (url) {
+              editor
+                .chain()
+                .focus()
+                .setLink({ href: url })
+                .run();
+            }
+          }}
           style={{
-            padding: "8px 11px",
-            borderRadius: 8,
-            border: "1px solid #e2e8f0",
-            background: editor.isActive(
-              "link"
-            )
-              ? "#e2e8f0"
-              : "#ffffff",
+            padding: "7px 10px",
+            borderRadius: "6px",
+            border: "1px solid #ccc",
+          }}
+        >
+          🔗
+        </button>
+
+        {/* زر الصورة */}
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          style={{
+            padding: "7px 10px",
+            borderRadius: "6px",
+            border: "1px solid #ccc",
+            background: "#fff",
             cursor: "pointer",
           }}
         >
-          🔗 رابط
+          🖼️ صورة
         </button>
+
+        {/* input مخفي */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleImageUpload}
+          style={{ display: "none" }}
+        />
 
         <button
           type="button"
           onClick={() =>
-            editor
-              .chain()
-              .focus()
-              .undo()
-              .run()
+            editor.chain().focus().undo().run()
           }
           style={{
-            padding: "8px 11px",
-            borderRadius: 8,
-            border: "1px solid #e2e8f0",
-            background: "#ffffff",
-            cursor: "pointer",
+            padding: "7px 10px",
+            borderRadius: "6px",
+            border: "1px solid #ccc",
           }}
         >
           ↶
@@ -346,37 +357,27 @@ export default function RichEditor({
         <button
           type="button"
           onClick={() =>
-            editor
-              .chain()
-              .focus()
-              .redo()
-              .run()
+            editor.chain().focus().redo().run()
           }
           style={{
-            padding: "8px 11px",
-            borderRadius: 8,
-            border: "1px solid #e2e8f0",
-            background: "#ffffff",
-            cursor: "pointer",
+            padding: "7px 10px",
+            borderRadius: "6px",
+            border: "1px solid #ccc",
           }}
         >
           ↷
         </button>
       </div>
 
-      {/* Editor */}
-
-      <EditorContent
-        editor={editor}
+      {/* منطقة الكتابة */}
+      <div
         style={{
-          minHeight: 320,
-          padding: 18,
-          direction: "rtl",
-          textAlign: "right",
-          lineHeight: 1.9,
-          fontSize: 17,
+          padding: "16px",
+          minHeight: "300px",
         }}
-      />
+      >
+        <EditorContent editor={editor} />
+      </div>
     </div>
   );
 }
