@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 type AuthState = "loading" | "success" | "error" | "outside";
+type View = "home" | "editor";
 
 interface UserData {
   id: string;
@@ -16,8 +17,28 @@ interface UserData {
 
 export default function Home() {
   const [status, setStatus] = useState<AuthState>("loading");
-  const [message, setMessage] = useState("جاري الاتصال بـ Telegram...");
+  const [message, setMessage] = useState(
+    "جاري الاتصال بـ Telegram..."
+  );
+
   const [user, setUser] = useState<UserData | null>(null);
+  const [view, setView] = useState<View>("home");
+
+  const [initData, setInitData] = useState("");
+
+  /* محرر المقال */
+
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [category, setCategory] = useState("");
+
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+  const [saveError, setSaveError] = useState("");
+
+  /* =========================================
+     تسجيل الدخول
+  ========================================= */
 
   useEffect(() => {
     async function authenticate() {
@@ -34,40 +55,54 @@ export default function Home() {
       webApp.ready();
       webApp.expand();
 
-      const initData = webApp.initData;
+      const telegramInitData = webApp.initData;
 
-      if (!initData) {
+      if (!telegramInitData) {
         setStatus("error");
-        setMessage("لم تصل بيانات المصادقة من Telegram.");
+        setMessage(
+          "لم تصل بيانات المصادقة من Telegram."
+        );
         return;
       }
 
+      setInitData(telegramInitData);
+
       try {
-        const response = await fetch("/api/auth/telegram", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            initData,
-          }),
-        });
+        const response = await fetch(
+          "/api/auth/telegram",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              initData: telegramInitData,
+            }),
+          }
+        );
 
         const result = await response.json();
 
         if (!response.ok || !result.success) {
           throw new Error(
-            result.error || "فشل التحقق من حساب Telegram."
+            result.error ||
+              "فشل التحقق من حساب Telegram."
           );
         }
 
         setUser(result.user);
         setStatus("success");
-        setMessage("تم تسجيل الدخول بنجاح.");
+        setMessage(
+          "تم تسجيل الدخول بنجاح."
+        );
       } catch (error) {
-        console.error("Authentication error:", error);
+        console.error(
+          "Authentication error:",
+          error
+        );
 
         setStatus("error");
+
         setMessage(
           error instanceof Error
             ? error.message
@@ -79,22 +114,106 @@ export default function Home() {
     authenticate();
   }, []);
 
-  /* =========================
+  /* =========================================
+     حفظ المقال
+  ========================================= */
+
+  async function saveArticle() {
+    setSaveMessage("");
+    setSaveError("");
+
+    if (!title.trim()) {
+      setSaveError(
+        "اكتب عنوان المقال أولًا."
+      );
+      return;
+    }
+
+    if (!content.trim()) {
+      setSaveError(
+        "اكتب محتوى المقال أولًا."
+      );
+      return;
+    }
+
+    if (!initData) {
+      setSaveError(
+        "لم يتم العثور على بيانات Telegram."
+      );
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const response = await fetch(
+        "/api/articles",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            initData,
+            title,
+            content,
+            category,
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.error ||
+            "فشل حفظ المقال."
+        );
+      }
+
+      setSaveMessage(
+        "تم حفظ المقال كمسودة بنجاح ✅"
+      );
+
+      setTitle("");
+      setContent("");
+      setCategory("");
+    } catch (error) {
+      console.error(
+        "Save article error:",
+        error
+      );
+
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : "حدث خطأ أثناء حفظ المقال."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /* =========================================
      شاشة التحميل
-  ========================= */
+  ========================================= */
 
   if (status === "loading") {
     return (
-      <main style={styles.page}>
-        <div style={styles.loadingContainer}>
+      <main style={styles.centerPage}>
+        <div style={styles.loadingBox}>
           <div style={styles.logo}>م</div>
 
-          <h1 style={styles.title}>مقالات</h1>
+          <h1 style={styles.mainTitle}>
+            مقالات
+          </h1>
 
-          <p style={styles.subtitle}>Article Studio</p>
+          <p style={styles.subtitle}>
+            Article Studio
+          </p>
 
-          <div style={styles.loadingBox}>
-            <div style={styles.spinner}></div>
+          <div style={styles.statusBox}>
+            <div style={styles.spinner} />
             <strong>{message}</strong>
           </div>
         </div>
@@ -102,91 +221,253 @@ export default function Home() {
     );
   }
 
-  /* =========================
-     خطأ
-  ========================= */
+  /* =========================================
+     شاشة الخطأ
+  ========================================= */
 
-  if (status === "error" || status === "outside") {
+  if (
+    status === "error" ||
+    status === "outside"
+  ) {
     return (
-      <main style={styles.page}>
-        <div style={styles.errorContainer}>
+      <main style={styles.centerPage}>
+        <div style={styles.loadingBox}>
           <div style={styles.logo}>م</div>
 
-          <h1 style={styles.title}>مقالات</h1>
+          <h1 style={styles.mainTitle}>
+            مقالات
+          </h1>
 
-          <p style={styles.subtitle}>Article Studio</p>
+          <p style={styles.subtitle}>
+            Article Studio
+          </p>
 
           <div style={styles.errorBox}>
-            <div style={styles.errorIcon}>!</div>
+            <div style={styles.errorIcon}>
+              !
+            </div>
 
-            <h2 style={{ margin: "0 0 10px" }}>
+            <strong>
               {status === "outside"
-                ? "التطبيق يعمل داخل Telegram"
+                ? "افتح التطبيق من Telegram"
                 : "تعذر تسجيل الدخول"}
-            </h2>
+            </strong>
 
-            <p style={styles.errorText}>{message}</p>
+            <p style={styles.errorText}>
+              {message}
+            </p>
           </div>
         </div>
       </main>
     );
   }
 
-  /* =========================
-     التطبيق الرئيسي
-  ========================= */
+  /* =========================================
+     محرر المقال
+  ========================================= */
+
+  if (view === "editor") {
+    return (
+      <main style={styles.app}>
+        <header style={styles.header}>
+          <button
+            style={styles.backButton}
+            onClick={() => {
+              setView("home");
+              setSaveMessage("");
+              setSaveError("");
+            }}
+          >
+            → الرئيسية
+          </button>
+
+          <div style={styles.headerBrand}>
+            <strong>مقال جديد</strong>
+            <small>Article Studio</small>
+          </div>
+        </header>
+
+        <section style={styles.editorContainer}>
+          <div style={styles.editorIntro}>
+            <span style={styles.editorIcon}>
+              ✍️
+            </span>
+
+            <div>
+              <h1 style={styles.editorTitle}>
+                إنشاء مقال جديد
+              </h1>
+
+              <p style={styles.editorDescription}>
+                اكتب مقالك واحفظه كمسودة للعودة
+                إليه لاحقًا.
+              </p>
+            </div>
+          </div>
+
+          {/* العنوان */}
+
+          <label style={styles.label}>
+            عنوان المقال
+          </label>
+
+          <input
+            value={title}
+            onChange={(e) =>
+              setTitle(e.target.value)
+            }
+            placeholder="اكتب عنوان المقال..."
+            style={styles.titleInput}
+          />
+
+          {/* التصنيف */}
+
+          <label style={styles.label}>
+            التصنيف
+          </label>
+
+          <input
+            value={category}
+            onChange={(e) =>
+              setCategory(e.target.value)
+            }
+            placeholder="مثال: تقنية، أدب، تعليم..."
+            style={styles.input}
+          />
+
+          {/* المحتوى */}
+
+          <label style={styles.label}>
+            محتوى المقال
+          </label>
+
+          <textarea
+            value={content}
+            onChange={(e) =>
+              setContent(e.target.value)
+            }
+            placeholder="ابدأ كتابة مقالك هنا..."
+            style={styles.textarea}
+          />
+
+          <div style={styles.wordCounter}>
+            {content.trim()
+              ? content
+                  .trim()
+                  .split(/\s+/)
+                  .filter(Boolean).length
+              : 0}{" "}
+            كلمة
+          </div>
+
+          {/* الرسائل */}
+
+          {saveError && (
+            <div style={styles.saveError}>
+              {saveError}
+            </div>
+          )}
+
+          {saveMessage && (
+            <div style={styles.saveSuccess}>
+              {saveMessage}
+            </div>
+          )}
+
+          {/* زر الحفظ */}
+
+          <button
+            onClick={saveArticle}
+            disabled={saving}
+            style={{
+              ...styles.saveButton,
+              opacity: saving ? 0.65 : 1,
+            }}
+          >
+            {saving
+              ? "جاري الحفظ..."
+              : "حفظ كمسودة"}
+          </button>
+        </section>
+      </main>
+    );
+  }
+
+  /* =========================================
+     الصفحة الرئيسية
+  ========================================= */
 
   return (
     <main style={styles.app}>
-      {/* الهيدر */}
-
       <header style={styles.header}>
         <div>
-          <div style={styles.brand}>مقالات</div>
-          <div style={styles.brandSub}>Article Studio</div>
+          <div style={styles.brand}>
+            مقالات
+          </div>
+
+          <small style={styles.brandSub}>
+            Article Studio
+          </small>
         </div>
 
         <div style={styles.avatar}>
-          {user?.first_name?.charAt(0) || "م"}
+          {user?.first_name?.charAt(0) ||
+            "م"}
         </div>
       </header>
 
-      {/* المحتوى */}
-
       <section style={styles.content}>
-        {/* الترحيب */}
-
         <div style={styles.welcome}>
-          <p style={styles.smallText}>مرحبًا بعودتك 👋</p>
+          <p style={styles.smallText}>
+            مرحبًا بعودتك 👋
+          </p>
 
           <h1 style={styles.welcomeTitle}>
             {user?.first_name || "صديقي"}
           </h1>
 
           <p style={styles.welcomeDescription}>
-            أنشئ مقالاتك، نظّم أفكارك، واجعل كتابتك أكثر احترافية.
+            أنشئ مقالاتك ونظّم أفكارك في مكان
+            واحد.
           </p>
         </div>
 
-        {/* زر إنشاء مقال */}
+        {/* إنشاء مقال */}
 
         <button
           style={styles.createButton}
-          onClick={() => alert("سنضيف محرر المقالات هنا في الخطوة التالية.")}
+          onClick={() => {
+            setView("editor");
+            setSaveMessage("");
+            setSaveError("");
+          }}
         >
-          <span style={styles.createIcon}>＋</span>
+          <span style={styles.createIcon}>
+            ＋
+          </span>
 
           <span>
-            <strong style={{ display: "block", fontSize: "17px" }}>
+            <strong
+              style={{
+                display: "block",
+                fontSize: "17px",
+              }}
+            >
               إنشاء مقال جديد
             </strong>
 
-            <small style={{ opacity: 0.8 }}>
+            <small
+              style={{
+                opacity: 0.75,
+              }}
+            >
               ابدأ كتابة مقال جديد
             </small>
           </span>
 
-          <span style={styles.arrow}>←</span>
+          <span style={styles.arrow}>
+            ←
+          </span>
         </button>
 
         {/* الإحصائيات */}
@@ -197,25 +478,49 @@ export default function Home() {
 
         <div style={styles.statsGrid}>
           <div style={styles.statCard}>
-            <div style={styles.statIcon}>📝</div>
-            <strong style={styles.statNumber}>0</strong>
-            <span style={styles.statLabel}>المقالات</span>
+            <div style={styles.statIcon}>
+              📝
+            </div>
+
+            <strong style={styles.statNumber}>
+              0
+            </strong>
+
+            <span style={styles.statLabel}>
+              المقالات
+            </span>
           </div>
 
           <div style={styles.statCard}>
-            <div style={styles.statIcon}>📂</div>
-            <strong style={styles.statNumber}>0</strong>
-            <span style={styles.statLabel}>المسودات</span>
+            <div style={styles.statIcon}>
+              📂
+            </div>
+
+            <strong style={styles.statNumber}>
+              0
+            </strong>
+
+            <span style={styles.statLabel}>
+              المسودات
+            </span>
           </div>
 
           <div style={styles.statCard}>
-            <div style={styles.statIcon}>⭐</div>
-            <strong style={styles.statNumber}>0</strong>
-            <span style={styles.statLabel}>المفضلة</span>
+            <div style={styles.statIcon}>
+              ⭐
+            </div>
+
+            <strong style={styles.statNumber}>
+              0
+            </strong>
+
+            <span style={styles.statLabel}>
+              المفضلة
+            </span>
           </div>
         </div>
 
-        {/* الأدوات */}
+        {/* أدوات */}
 
         <div style={styles.sectionTitle}>
           <h2>الوصول السريع</h2>
@@ -225,45 +530,77 @@ export default function Home() {
           <button
             style={styles.toolCard}
             onClick={() =>
-              alert("قسم مقالاتي سنبنيه في الخطوة التالية.")
+              alert(
+                "سنربط هذا القسم بالمقالات المحفوظة في الخطوة التالية."
+              )
             }
           >
-            <span style={styles.toolIcon}>📚</span>
+            <span style={styles.toolIcon}>
+              📚
+            </span>
+
             <strong>مقالاتي</strong>
-            <small>عرض جميع مقالاتك</small>
+
+            <small>
+              عرض المقالات والمسودات
+            </small>
           </button>
 
           <button
             style={styles.toolCard}
             onClick={() =>
-              alert("قسم التصنيفات سنبنيه في الخطوة التالية.")
+              alert(
+                "سنربط التصنيفات بقاعدة البيانات لاحقًا."
+              )
             }
           >
-            <span style={styles.toolIcon}>🗂️</span>
+            <span style={styles.toolIcon}>
+              🗂️
+            </span>
+
             <strong>التصنيفات</strong>
-            <small>تنظيم مقالاتك</small>
+
+            <small>
+              تنظيم المقالات
+            </small>
           </button>
 
           <button
             style={styles.toolCard}
             onClick={() =>
-              alert("البحث سنبنيه في الخطوة التالية.")
+              alert(
+                "سنضيف البحث في الخطوة التالية."
+              )
             }
           >
-            <span style={styles.toolIcon}>🔎</span>
+            <span style={styles.toolIcon}>
+              🔎
+            </span>
+
             <strong>البحث</strong>
-            <small>ابحث في مقالاتك</small>
+
+            <small>
+              البحث في المقالات
+            </small>
           </button>
 
           <button
             style={styles.toolCard}
             onClick={() =>
-              alert("الإعدادات سنبنيها في الخطوة التالية.")
+              alert(
+                "سنضيف الإعدادات لاحقًا."
+              )
             }
           >
-            <span style={styles.toolIcon}>⚙️</span>
+            <span style={styles.toolIcon}>
+              ⚙️
+            </span>
+
             <strong>الإعدادات</strong>
-            <small>إعدادات الحساب</small>
+
+            <small>
+              إعدادات الحساب
+            </small>
           </button>
         </div>
 
@@ -271,31 +608,41 @@ export default function Home() {
 
         <div style={styles.accountCard}>
           <div style={styles.accountAvatar}>
-            {user?.first_name?.charAt(0) || "م"}
+            {user?.first_name?.charAt(0) ||
+              "م"}
           </div>
 
           <div style={{ flex: 1 }}>
             <strong>
-              {user?.first_name || ""} {user?.last_name || ""}
+              {user?.first_name || ""}{" "}
+              {user?.last_name || ""}
             </strong>
 
             {user?.username && (
-              <p style={styles.accountUsername}>
+              <p
+                style={
+                  styles.accountUsername
+                }
+              >
                 @{user.username}
               </p>
             )}
           </div>
 
           {user?.is_premium && (
-            <span style={styles.premium}>Premium</span>
+            <span style={styles.premium}>
+              Premium
+            </span>
           )}
         </div>
       </section>
 
-      {/* شريط التنقل السفلي */}
+      {/* التنقل السفلي */}
 
       <nav style={styles.bottomNav}>
-        <button style={styles.navItemActive}>
+        <button
+          style={styles.navItemActive}
+        >
           <span>⌂</span>
           <small>الرئيسية</small>
         </button>
@@ -303,7 +650,9 @@ export default function Home() {
         <button
           style={styles.navItem}
           onClick={() =>
-            alert("صفحة المقالات سنبنيها قريبًا.")
+            alert(
+              "سنربطها بالمقالات الحقيقية قريبًا."
+            )
           }
         >
           <span>▤</span>
@@ -312,9 +661,11 @@ export default function Home() {
 
         <button
           style={styles.navCreate}
-          onClick={() =>
-            alert("محرر المقالات سنبنيه في الخطوة التالية.")
-          }
+          onClick={() => {
+            setView("editor");
+            setSaveMessage("");
+            setSaveError("");
+          }}
         >
           ＋
         </button>
@@ -322,7 +673,9 @@ export default function Home() {
         <button
           style={styles.navItem}
           onClick={() =>
-            alert("المفضلة سنبنيها قريبًا.")
+            alert(
+              "سنضيف المفضلة لاحقًا."
+            )
           }
         >
           <span>☆</span>
@@ -332,7 +685,9 @@ export default function Home() {
         <button
           style={styles.navItem}
           onClick={() =>
-            alert("الإعدادات سنبنيها قريبًا.")
+            alert(
+              "سنضيف الإعدادات لاحقًا."
+            )
           }
         >
           <span>⚙</span>
@@ -343,12 +698,15 @@ export default function Home() {
   );
 }
 
-/* =====================================================
-   Styles
-===================================================== */
+/* =========================================
+   التصميم
+========================================= */
 
-const styles: Record<string, React.CSSProperties> = {
-  page: {
+const styles: Record<
+  string,
+  React.CSSProperties
+> = {
+  centerPage: {
     minHeight: "100vh",
     background: "#f5f7fb",
     display: "flex",
@@ -361,13 +719,7 @@ const styles: Record<string, React.CSSProperties> = {
     boxSizing: "border-box",
   },
 
-  loadingContainer: {
-    width: "100%",
-    maxWidth: "480px",
-    textAlign: "center",
-  },
-
-  errorContainer: {
+  loadingBox: {
     width: "100%",
     maxWidth: "480px",
     textAlign: "center",
@@ -385,27 +737,23 @@ const styles: Record<string, React.CSSProperties> = {
     margin: "0 auto 18px",
     fontSize: "32px",
     fontWeight: 800,
-    boxShadow: "0 12px 30px rgba(0,0,0,.12)",
   },
 
-  title: {
+  mainTitle: {
     margin: 0,
     fontSize: "30px",
     fontWeight: 800,
-    color: "#111827",
   },
 
   subtitle: {
     margin: "7px 0 30px",
     color: "#6b7280",
-    fontSize: "14px",
   },
 
-  loadingBox: {
+  statusBox: {
     background: "#fff",
     borderRadius: "18px",
     padding: "22px",
-    boxShadow: "0 10px 30px rgba(0,0,0,.06)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -422,29 +770,27 @@ const styles: Record<string, React.CSSProperties> = {
 
   errorBox: {
     background: "#fff",
-    borderRadius: "22px",
-    padding: "30px 22px",
-    boxShadow: "0 10px 30px rgba(0,0,0,.06)",
+    borderRadius: "20px",
+    padding: "25px",
   },
 
   errorIcon: {
-    width: "48px",
-    height: "48px",
+    margin: "0 auto 14px",
+    width: "45px",
+    height: "45px",
     borderRadius: "50%",
     background: "#fee2e2",
     color: "#dc2626",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    margin: "0 auto 16px",
-    fontSize: "24px",
     fontWeight: 800,
+    fontSize: "22px",
   },
 
   errorText: {
     color: "#6b7280",
     lineHeight: 1.8,
-    margin: 0,
   },
 
   app: {
@@ -453,20 +799,41 @@ const styles: Record<string, React.CSSProperties> = {
     direction: "rtl",
     fontFamily:
       "Arial, Helvetica, sans-serif",
-    paddingBottom: "92px",
+    paddingBottom: "90px",
     color: "#111827",
   },
 
   header: {
-    background: "#ffffff",
-    padding: "18px 20px",
+    background: "#fff",
+    padding: "16px 20px",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    borderBottom: "1px solid #eef0f4",
+    borderBottom:
+      "1px solid #eef0f4",
     position: "sticky",
     top: 0,
     zIndex: 20,
+  },
+
+  headerBrand: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "3px",
+  },
+
+  headerBrandSmall: {
+    color: "#9ca3af",
+  },
+
+  backButton: {
+    background: "#f3f4f6",
+    border: 0,
+    borderRadius: "12px",
+    padding: "10px 13px",
+    cursor: "pointer",
+    color: "#111827",
+    fontWeight: 700,
   },
 
   brand: {
@@ -477,9 +844,6 @@ const styles: Record<string, React.CSSProperties> = {
   brandSub: {
     color: "#9ca3af",
     fontSize: "11px",
-    marginTop: "2px",
-    direction: "ltr",
-    textAlign: "right",
   },
 
   avatar: {
@@ -492,7 +856,6 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     fontWeight: 800,
-    fontSize: "18px",
   },
 
   content: {
@@ -503,6 +866,131 @@ const styles: Record<string, React.CSSProperties> = {
     boxSizing: "border-box",
   },
 
+  editorContainer: {
+    width: "100%",
+    maxWidth: "800px",
+    margin: "0 auto",
+    padding: "24px 18px",
+    boxSizing: "border-box",
+  },
+
+  editorIntro: {
+    display: "flex",
+    alignItems: "center",
+    gap: "13px",
+    marginBottom: "26px",
+  },
+
+  editorIcon: {
+    width: "50px",
+    height: "50px",
+    borderRadius: "16px",
+    background: "#111827",
+    color: "#fff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "23px",
+  },
+
+  editorTitle: {
+    margin: 0,
+    fontSize: "24px",
+  },
+
+  editorDescription: {
+    margin: "5px 0 0",
+    color: "#6b7280",
+    fontSize: "13px",
+  },
+
+  label: {
+    display: "block",
+    fontWeight: 800,
+    margin: "18px 0 8px",
+    fontSize: "14px",
+  },
+
+  titleInput: {
+    width: "100%",
+    boxSizing: "border-box",
+    border: "1px solid #e5e7eb",
+    background: "#fff",
+    borderRadius: "16px",
+    padding: "17px",
+    fontSize: "19px",
+    outline: "none",
+    direction: "rtl",
+  },
+
+  input: {
+    width: "100%",
+    boxSizing: "border-box",
+    border: "1px solid #e5e7eb",
+    background: "#fff",
+    borderRadius: "15px",
+    padding: "15px",
+    fontSize: "15px",
+    outline: "none",
+    direction: "rtl",
+  },
+
+  textarea: {
+    width: "100%",
+    minHeight: "320px",
+    boxSizing: "border-box",
+    resize: "vertical",
+    border: "1px solid #e5e7eb",
+    background: "#fff",
+    borderRadius: "18px",
+    padding: "17px",
+    fontSize: "16px",
+    lineHeight: 1.9,
+    outline: "none",
+    direction: "rtl",
+    fontFamily:
+      "Arial, Helvetica, sans-serif",
+  },
+
+  wordCounter: {
+    color: "#9ca3af",
+    fontSize: "12px",
+    marginTop: "7px",
+  },
+
+  saveButton: {
+    width: "100%",
+    marginTop: "18px",
+    border: 0,
+    borderRadius: "16px",
+    padding: "17px",
+    background: "#111827",
+    color: "#fff",
+    fontSize: "16px",
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+
+  saveSuccess: {
+    marginTop: "15px",
+    background: "#ecfdf5",
+    color: "#047857",
+    borderRadius: "14px",
+    padding: "13px",
+    fontSize: "14px",
+    fontWeight: 700,
+  },
+
+  saveError: {
+    marginTop: "15px",
+    background: "#fef2f2",
+    color: "#b91c1c",
+    borderRadius: "14px",
+    padding: "13px",
+    fontSize: "14px",
+    fontWeight: 700,
+  },
+
   welcome: {
     marginBottom: "22px",
   },
@@ -510,7 +998,6 @@ const styles: Record<string, React.CSSProperties> = {
   smallText: {
     color: "#6b7280",
     margin: "0 0 6px",
-    fontSize: "14px",
   },
 
   welcomeTitle: {
@@ -523,7 +1010,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#6b7280",
     lineHeight: 1.7,
     margin: "9px 0 0",
-    fontSize: "14px",
   },
 
   createButton: {
@@ -538,14 +1024,14 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "14px",
     textAlign: "right",
     cursor: "pointer",
-    boxShadow: "0 12px 28px rgba(17,24,39,.18)",
   },
 
   createIcon: {
     width: "46px",
     height: "46px",
     borderRadius: "15px",
-    background: "rgba(255,255,255,.12)",
+    background:
+      "rgba(255,255,255,.12)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -555,7 +1041,6 @@ const styles: Record<string, React.CSSProperties> = {
   arrow: {
     marginRight: "auto",
     fontSize: "20px",
-    opacity: 0.7,
   },
 
   sectionTitle: {
@@ -565,7 +1050,8 @@ const styles: Record<string, React.CSSProperties> = {
 
   statsGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
+    gridTemplateColumns:
+      "repeat(3, 1fr)",
     gap: "10px",
   },
 
@@ -574,7 +1060,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "18px",
     padding: "16px 10px",
     textAlign: "center",
-    boxShadow: "0 5px 18px rgba(0,0,0,.04)",
   },
 
   statIcon: {
@@ -596,7 +1081,8 @@ const styles: Record<string, React.CSSProperties> = {
 
   toolsGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(2, 1fr)",
+    gridTemplateColumns:
+      "repeat(2, 1fr)",
     gap: "10px",
   },
 
@@ -624,7 +1110,6 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     gap: "12px",
-    boxShadow: "0 5px 18px rgba(0,0,0,.04)",
   },
 
   accountAvatar: {
@@ -642,8 +1127,6 @@ const styles: Record<string, React.CSSProperties> = {
     margin: "4px 0 0",
     color: "#9ca3af",
     fontSize: "12px",
-    direction: "ltr",
-    textAlign: "right",
   },
 
   premium: {
@@ -660,13 +1143,14 @@ const styles: Record<string, React.CSSProperties> = {
     right: 0,
     left: 0,
     height: "70px",
-    background: "rgba(255,255,255,.96)",
-    borderTop: "1px solid #e5e7eb",
+    background:
+      "rgba(255,255,255,.96)",
+    borderTop:
+      "1px solid #e5e7eb",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-around",
     zIndex: 30,
-    backdropFilter: "blur(12px)",
   },
 
   navItem: {
@@ -704,6 +1188,5 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "27px",
     cursor: "pointer",
     marginTop: "-25px",
-    boxShadow: "0 8px 20px rgba(17,24,39,.2)",
   },
 };
