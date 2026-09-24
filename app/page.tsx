@@ -31,14 +31,20 @@ export default function Home() {
   const [initData, setInitData] = useState("");
   const [user, setUser] = useState<User | null>(null);
 
+  const [articles, setArticles] = useState<Article[]>([]);
+
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [category, setCategory] = useState("");
 
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [loadingArticles, setLoadingArticles] = useState(false);
+  const [editingArticleId, setEditingArticleId] = useState<string | null>(
+    null
+  );
 
+  const [loadingArticles, setLoadingArticles] = useState(false);
+  const [loadingArticle, setLoadingArticle] = useState(false);
   const [saving, setSaving] = useState(false);
+
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -124,6 +130,74 @@ export default function Home() {
     }
   }
 
+  async function openArticle(articleId: string) {
+    if (!initData) {
+      setMessage("بيانات Telegram غير جاهزة.");
+      return;
+    }
+
+    setLoadingArticle(true);
+    setMessage("");
+
+    try {
+      const response = await fetch(`/api/articles/${articleId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          initData,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        setMessage(data.message || "تعذر فتح المقال.");
+        return;
+      }
+
+      const article = data.article;
+
+      setEditingArticleId(article.id);
+      setTitle(article.title || "");
+      setCategory(article.category || "");
+
+      let articleContent = "";
+
+      if (
+        article.content &&
+        Array.isArray(article.content.content)
+      ) {
+        articleContent = article.content.content
+          .map((block: any) => {
+            if (!block.content) return "";
+
+            return block.content
+              .map((item: any) => item.text || "")
+              .join("");
+          })
+          .join("\n");
+      }
+
+      if (!articleContent && article.html_content) {
+        articleContent = article.html_content
+          .replace(/<br\s*\/?>/gi, "\n")
+          .replace(/<\/p>/gi, "\n")
+          .replace(/<[^>]*>/g, "")
+          .trim();
+      }
+
+      setContent(articleContent);
+      setView("editor");
+    } catch (error) {
+      console.error(error);
+      setMessage("حدث خطأ أثناء فتح المقال.");
+    } finally {
+      setLoadingArticle(false);
+    }
+  }
+
   async function saveArticle() {
     if (!initData) {
       setMessage("بيانات Telegram غير جاهزة.");
@@ -144,18 +218,36 @@ export default function Home() {
     setMessage("");
 
     try {
-      const response = await fetch("/api/articles", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          initData,
-          title,
-          content,
-          category,
-        }),
-      });
+      let response;
+
+      if (editingArticleId) {
+        response = await fetch("/api/articles/update", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            initData,
+            articleId: editingArticleId,
+            title,
+            content,
+            category,
+          }),
+        });
+      } else {
+        response = await fetch("/api/articles", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            initData,
+            title,
+            content,
+            category,
+          }),
+        });
+      }
 
       const data = await response.json();
 
@@ -164,7 +256,13 @@ export default function Home() {
         return;
       }
 
-      setMessage("تم حفظ المقال كمسودة بنجاح ✅");
+      if (editingArticleId) {
+        setMessage("تم تحديث المقال بنجاح ✅");
+      } else {
+        setMessage("تم حفظ المقال كمسودة بنجاح ✅");
+      }
+
+      setEditingArticleId(null);
 
       setTitle("");
       setContent("");
@@ -172,13 +270,22 @@ export default function Home() {
 
       setTimeout(() => {
         loadArticles();
-      }, 800);
+      }, 700);
     } catch (error) {
       console.error(error);
       setMessage("حدث خطأ أثناء حفظ المقال.");
     } finally {
       setSaving(false);
     }
+  }
+
+  function openNewArticle() {
+    setEditingArticleId(null);
+    setTitle("");
+    setContent("");
+    setCategory("");
+    setMessage("");
+    setView("editor");
   }
 
   function formatDate(date: string) {
@@ -206,14 +313,6 @@ export default function Home() {
     }
   }
 
-  function openNewArticle() {
-    setMessage("");
-    setTitle("");
-    setContent("");
-    setCategory("");
-    setView("editor");
-  }
-
   return (
     <main
       dir="rtl"
@@ -234,6 +333,7 @@ export default function Home() {
         }}
       >
         {/* Header */}
+
         <header
           style={{
             display: "flex",
@@ -280,7 +380,8 @@ export default function Home() {
           </div>
         </header>
 
-        {/* Global message */}
+        {/* Message */}
+
         {message && (
           <div
             style={{
@@ -298,6 +399,7 @@ export default function Home() {
         )}
 
         {/* HOME */}
+
         {view === "home" && (
           <>
             <section
@@ -372,7 +474,9 @@ export default function Home() {
                 cursor: "pointer",
               }}
             >
-              {loadingArticles ? "جاري تحميل المقالات..." : "📚 مقالاتي"}
+              {loadingArticles
+                ? "جاري تحميل المقالات..."
+                : "📚 مقالاتي"}
             </button>
 
             <div
@@ -391,8 +495,14 @@ export default function Home() {
                   border: "1px solid #e5e7eb",
                 }}
               >
-                <div style={{ fontSize: 24, marginBottom: 8 }}>🏷️</div>
-                <div style={{ fontWeight: 700 }}>التصنيفات</div>
+                <div style={{ fontSize: 24, marginBottom: 8 }}>
+                  🏷️
+                </div>
+
+                <div style={{ fontWeight: 700 }}>
+                  التصنيفات
+                </div>
+
                 <div
                   style={{
                     fontSize: 13,
@@ -412,8 +522,14 @@ export default function Home() {
                   border: "1px solid #e5e7eb",
                 }}
               >
-                <div style={{ fontSize: 24, marginBottom: 8 }}>⚙️</div>
-                <div style={{ fontWeight: 700 }}>الإعدادات</div>
+                <div style={{ fontSize: 24, marginBottom: 8 }}>
+                  ⚙️
+                </div>
+
+                <div style={{ fontWeight: 700 }}>
+                  الإعدادات
+                </div>
+
                 <div
                   style={{
                     fontSize: 13,
@@ -429,10 +545,14 @@ export default function Home() {
         )}
 
         {/* EDITOR */}
+
         {view === "editor" && (
           <>
             <button
-              onClick={() => setView("home")}
+              onClick={() => {
+                setEditingArticleId(null);
+                setView("articles");
+              }}
               style={{
                 border: "none",
                 background: "transparent",
@@ -443,7 +563,7 @@ export default function Home() {
                 color: "#2563eb",
               }}
             >
-              ← العودة للرئيسية
+              ← العودة
             </button>
 
             <h1
@@ -452,81 +572,112 @@ export default function Home() {
                 marginBottom: 20,
               }}
             >
-              إنشاء مقال جديد
+              {editingArticleId
+                ? "تعديل المقال"
+                : "إنشاء مقال جديد"}
             </h1>
 
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="عنوان المقال"
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                padding: 16,
-                borderRadius: 14,
-                border: "1px solid #d1d5db",
-                fontSize: 17,
-                marginBottom: 12,
-                outline: "none",
-              }}
-            />
+            {loadingArticle ? (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: 40,
+                  color: "#6b7280",
+                }}
+              >
+                جاري فتح المقال...
+              </div>
+            ) : (
+              <>
+                <input
+                  value={title}
+                  onChange={(e) =>
+                    setTitle(e.target.value)
+                  }
+                  placeholder="عنوان المقال"
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    padding: 16,
+                    borderRadius: 14,
+                    border: "1px solid #d1d5db",
+                    fontSize: 17,
+                    marginBottom: 12,
+                    outline: "none",
+                  }}
+                />
 
-            <input
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              placeholder="التصنيف (اختياري)"
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                padding: 15,
-                borderRadius: 14,
-                border: "1px solid #d1d5db",
-                fontSize: 15,
-                marginBottom: 12,
-                outline: "none",
-              }}
-            />
+                <input
+                  value={category}
+                  onChange={(e) =>
+                    setCategory(e.target.value)
+                  }
+                  placeholder="التصنيف (اختياري)"
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    padding: 15,
+                    borderRadius: 14,
+                    border: "1px solid #d1d5db",
+                    fontSize: 15,
+                    marginBottom: 12,
+                    outline: "none",
+                  }}
+                />
 
-            <textarea
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="اكتب محتوى المقال هنا..."
-              rows={14}
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                padding: 16,
-                borderRadius: 14,
-                border: "1px solid #d1d5db",
-                fontSize: 16,
-                lineHeight: 1.9,
-                resize: "vertical",
-                outline: "none",
-                marginBottom: 14,
-              }}
-            />
+                <textarea
+                  value={content}
+                  onChange={(e) =>
+                    setContent(e.target.value)
+                  }
+                  placeholder="اكتب محتوى المقال هنا..."
+                  rows={14}
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    padding: 16,
+                    borderRadius: 14,
+                    border: "1px solid #d1d5db",
+                    fontSize: 16,
+                    lineHeight: 1.9,
+                    resize: "vertical",
+                    outline: "none",
+                    marginBottom: 14,
+                  }}
+                />
 
-            <button
-              onClick={saveArticle}
-              disabled={saving}
-              style={{
-                width: "100%",
-                border: "none",
-                borderRadius: 16,
-                padding: 17,
-                background: saving ? "#93c5fd" : "#2563eb",
-                color: "#fff",
-                fontSize: 16,
-                fontWeight: 700,
-                cursor: saving ? "default" : "pointer",
-              }}
-            >
-              {saving ? "جاري الحفظ..." : "حفظ كمسودة"}
-            </button>
+                <button
+                  onClick={saveArticle}
+                  disabled={saving}
+                  style={{
+                    width: "100%",
+                    border: "none",
+                    borderRadius: 16,
+                    padding: 17,
+                    background: saving
+                      ? "#93c5fd"
+                      : "#2563eb",
+                    color: "#fff",
+                    fontSize: 16,
+                    fontWeight: 700,
+                    cursor: saving
+                      ? "default"
+                      : "pointer",
+                  }}
+                >
+                  {saving
+                    ? "جاري الحفظ..."
+                    : editingArticleId
+                    ? "حفظ التعديلات"
+                    : "حفظ كمسودة"}
+                </button>
+              </>
+            )}
           </>
         )}
 
         {/* ARTICLES */}
+
         {view === "articles" && (
           <>
             <div
@@ -636,19 +787,26 @@ export default function Home() {
                 }}
               >
                 {articles.map((article) => (
-                  <div
+                  <button
                     key={article.id}
+                    onClick={() =>
+                      openArticle(article.id)
+                    }
                     style={{
+                      width: "100%",
+                      textAlign: "right",
                       background: "#fff",
                       border: "1px solid #e5e7eb",
                       borderRadius: 20,
                       padding: 18,
+                      cursor: "pointer",
                     }}
                   >
                     <div
                       style={{
                         display: "flex",
-                        justifyContent: "space-between",
+                        justifyContent:
+                          "space-between",
                         gap: 10,
                         alignItems: "flex-start",
                       }}
@@ -661,7 +819,8 @@ export default function Home() {
                             lineHeight: 1.5,
                           }}
                         >
-                          {article.title || "بدون عنوان"}
+                          {article.title ||
+                            "بدون عنوان"}
                         </div>
 
                         {article.excerpt && (
@@ -688,7 +847,9 @@ export default function Home() {
                           whiteSpace: "nowrap",
                         }}
                       >
-                        {statusText(article.status)}
+                        {statusText(
+                          article.status
+                        )}
                       </span>
                     </div>
 
@@ -703,18 +864,24 @@ export default function Home() {
                       }}
                     >
                       {article.category && (
-                        <span>🏷️ {article.category}</span>
+                        <span>
+                          🏷️ {article.category}
+                        </span>
                       )}
 
                       <span>
-                        📅 {formatDate(article.updated_at)}
+                        📅{" "}
+                        {formatDate(
+                          article.updated_at
+                        )}
                       </span>
 
                       <span>
-                        📝 {article.word_count || 0} كلمة
+                        📝{" "}
+                        {article.word_count || 0} كلمة
                       </span>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
@@ -722,7 +889,8 @@ export default function Home() {
         )}
       </div>
 
-      {/* Bottom navigation */}
+      {/* Bottom Navigation */}
+
       <nav
         style={{
           position: "fixed",
