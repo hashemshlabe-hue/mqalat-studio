@@ -5,31 +5,33 @@ import { useEffect, useState } from "react";
 type User = {
   id: string;
   telegram_id: number;
-  username?: string | null;
-  first_name?: string | null;
-  last_name?: string | null;
+  username?: string;
+  first_name?: string;
+  last_name?: string;
 };
 
 type Article = {
   id: string;
   title: string;
-  slug: string;
-  status: string;
+  slug?: string;
+  status?: string;
   category?: string | null;
   excerpt?: string | null;
-  word_count?: number | null;
-  created_at: string;
-  updated_at: string;
+  word_count?: number;
+  created_at?: string;
+  updated_at?: string;
   published_at?: string | null;
+  content?: any;
+  html_content?: string | null;
 };
 
-type View = "home" | "editor" | "articles";
-
 export default function Home() {
-  const [view, setView] = useState<View>("home");
-
   const [initData, setInitData] = useState("");
   const [user, setUser] = useState<User | null>(null);
+
+  const [view, setView] = useState<
+    "home" | "editor" | "articles"
+  >("home");
 
   const [articles, setArticles] = useState<Article[]>([]);
 
@@ -37,926 +39,1024 @@ export default function Home() {
   const [content, setContent] = useState("");
   const [category, setCategory] = useState("");
 
-  const [editingArticleId, setEditingArticleId] = useState<string | null>(
-    null
-  );
+  const [editingArticleId, setEditingArticleId] =
+    useState<string | null>(null);
 
-  const [loadingArticles, setLoadingArticles] = useState(false);
-  const [loadingArticle, setLoadingArticle] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] =
+    useState<string | null>(null);
 
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  // =========================
+  // Telegram Authentication
+  // =========================
 
   useEffect(() => {
+    const authenticate = async () => {
+      try {
+        const tg = (window as any).Telegram?.WebApp;
+
+        if (!tg) {
+          setError(
+            "لم يتم فتح التطبيق من داخل Telegram."
+          );
+          setLoading(false);
+          return;
+        }
+
+        tg.ready();
+        tg.expand();
+
+        const telegramInitData = tg.initData;
+
+        if (!telegramInitData) {
+          setError(
+            "تعذر الحصول على بيانات Telegram."
+          );
+          setLoading(false);
+          return;
+        }
+
+        setInitData(telegramInitData);
+
+        const response = await fetch(
+          "/api/auth/telegram",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              initData: telegramInitData,
+            }),
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(
+            data.message ||
+              "فشل تسجيل الدخول."
+          );
+        }
+
+        setUser(data.user);
+      } catch (err: any) {
+        console.error(err);
+
+        setError(
+          err.message ||
+            "حدث خطأ أثناء تسجيل الدخول."
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
     authenticate();
   }, []);
 
-  async function authenticate() {
+  // =========================
+  // Load Articles
+  // =========================
+
+  const loadArticles = async () => {
+    if (!initData) return;
+
     try {
-      const tg = (window as any).Telegram?.WebApp;
+      setError("");
 
-      if (tg) {
-        tg.ready();
-        tg.expand();
-      }
-
-      const telegramInitData = tg?.initData;
-
-      if (!telegramInitData) {
-        setMessage("لم يتم العثور على بيانات Telegram.");
-        return;
-      }
-
-      setInitData(telegramInitData);
-
-      const response = await fetch("/api/auth/telegram", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          initData: telegramInitData,
-        }),
-      });
+      const response = await fetch(
+        "/api/articles/my",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            initData,
+          }),
+        }
+      );
 
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        setMessage(data.message || "فشل تسجيل الدخول.");
-        return;
-      }
-
-      setUser(data.user);
-    } catch (error) {
-      console.error(error);
-      setMessage("حدث خطأ أثناء تسجيل الدخول.");
-    }
-  }
-
-  async function loadArticles() {
-    if (!initData) {
-      setMessage("بيانات Telegram غير جاهزة.");
-      return;
-    }
-
-    setLoadingArticles(true);
-    setMessage("");
-
-    try {
-      const response = await fetch("/api/articles/my", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          initData,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        setMessage(data.message || "تعذر جلب المقالات.");
-        return;
+        throw new Error(
+          data.message ||
+            "تعذر تحميل المقالات."
+        );
       }
 
       setArticles(data.articles || []);
-      setView("articles");
-    } catch (error) {
-      console.error(error);
-      setMessage("حدث خطأ أثناء جلب المقالات.");
-    } finally {
-      setLoadingArticles(false);
+    } catch (err: any) {
+      console.error(err);
+
+      setError(
+        err.message ||
+          "حدث خطأ أثناء تحميل المقالات."
+      );
     }
-  }
+  };
 
-  async function openArticle(articleId: string) {
-    if (!initData) {
-      setMessage("بيانات Telegram غير جاهزة.");
-      return;
-    }
+  // =========================
+  // Open Articles View
+  // =========================
 
-    setLoadingArticle(true);
-    setMessage("");
+  const openArticles = async () => {
+    setView("articles");
+    await loadArticles();
+  };
 
-    try {
-      const response = await fetch(`/api/articles/${articleId}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          initData,
-        }),
-      });
+  // =========================
+  // Open New Article Editor
+  // =========================
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        setMessage(data.message || "تعذر فتح المقال.");
-        return;
-      }
-
-      const article = data.article;
-
-      setEditingArticleId(article.id);
-      setTitle(article.title || "");
-      setCategory(article.category || "");
-
-      let articleContent = "";
-
-      if (
-        article.content &&
-        Array.isArray(article.content.content)
-      ) {
-        articleContent = article.content.content
-          .map((block: any) => {
-            if (!block.content) return "";
-
-            return block.content
-              .map((item: any) => item.text || "")
-              .join("");
-          })
-          .join("\n");
-      }
-
-      if (!articleContent && article.html_content) {
-        articleContent = article.html_content
-          .replace(/<br\s*\/?>/gi, "\n")
-          .replace(/<\/p>/gi, "\n")
-          .replace(/<[^>]*>/g, "")
-          .trim();
-      }
-
-      setContent(articleContent);
-      setView("editor");
-    } catch (error) {
-      console.error(error);
-      setMessage("حدث خطأ أثناء فتح المقال.");
-    } finally {
-      setLoadingArticle(false);
-    }
-  }
-
-  async function saveArticle() {
-    if (!initData) {
-      setMessage("بيانات Telegram غير جاهزة.");
-      return;
-    }
-
-    if (!title.trim()) {
-      setMessage("اكتب عنوان المقال أولًا.");
-      return;
-    }
-
-    if (!content.trim()) {
-      setMessage("اكتب محتوى المقال أولًا.");
-      return;
-    }
-
-    setSaving(true);
-    setMessage("");
-
-    try {
-      let response;
-
-      if (editingArticleId) {
-        response = await fetch("/api/articles/update", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            initData,
-            articleId: editingArticleId,
-            title,
-            content,
-            category,
-          }),
-        });
-      } else {
-        response = await fetch("/api/articles", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            initData,
-            title,
-            content,
-            category,
-          }),
-        });
-      }
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        setMessage(data.message || "تعذر حفظ المقال.");
-        return;
-      }
-
-      if (editingArticleId) {
-        setMessage("تم تحديث المقال بنجاح ✅");
-      } else {
-        setMessage("تم حفظ المقال كمسودة بنجاح ✅");
-      }
-
-      setEditingArticleId(null);
-
-      setTitle("");
-      setContent("");
-      setCategory("");
-
-      setTimeout(() => {
-        loadArticles();
-      }, 700);
-    } catch (error) {
-      console.error(error);
-      setMessage("حدث خطأ أثناء حفظ المقال.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function openNewArticle() {
+  const openNewArticle = () => {
     setEditingArticleId(null);
     setTitle("");
     setContent("");
     setCategory("");
     setMessage("");
+    setError("");
+
     setView("editor");
-  }
+  };
 
-  function formatDate(date: string) {
+  // =========================
+  // Open Existing Article
+  // =========================
+
+  const openArticle = async (
+    articleId: string
+  ) => {
     try {
-      return new Date(date).toLocaleDateString("ar-LY", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
-    } catch {
-      return date;
+      setLoading(true);
+      setError("");
+      setMessage("");
+
+      const response = await fetch(
+        `/api/articles/${articleId}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            initData,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message ||
+            "تعذر فتح المقال."
+        );
+      }
+
+      const article: Article = data.article;
+
+      setEditingArticleId(article.id);
+      setTitle(article.title || "");
+      setCategory(article.category || "");
+
+      let extractedContent = "";
+
+      if (
+        article.content &&
+        Array.isArray(article.content.content)
+      ) {
+        extractedContent =
+          article.content.content
+            .map((node: any) => {
+              if (
+                node.type === "paragraph" &&
+                Array.isArray(node.content)
+              ) {
+                return node.content
+                  .map(
+                    (item: any) =>
+                      item.text || ""
+                  )
+                  .join("");
+              }
+
+              return "";
+            })
+            .join("\n");
+      }
+
+      if (!extractedContent && article.html_content) {
+        extractedContent =
+          article.html_content
+            .replace(/<br\s*\/?>/gi, "\n")
+            .replace(
+              /<\/p>/gi,
+              "\n"
+            )
+            .replace(
+              /<[^>]+>/g,
+              ""
+            )
+            .trim();
+      }
+
+      setContent(extractedContent);
+
+      setView("editor");
+    } catch (err: any) {
+      console.error(err);
+
+      setError(
+        err.message ||
+          "حدث خطأ أثناء فتح المقال."
+      );
+    } finally {
+      setLoading(false);
     }
+  };
+
+  // =========================
+  // Save Article
+  // =========================
+
+  const saveArticle = async () => {
+    if (!title.trim()) {
+      setError("اكتب عنوان المقال أولًا.");
+      return;
+    }
+
+    if (!content.trim()) {
+      setError("اكتب محتوى المقال أولًا.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError("");
+      setMessage("");
+
+      const endpoint = editingArticleId
+        ? "/api/articles/update"
+        : "/api/articles";
+
+      const body = editingArticleId
+        ? {
+            initData,
+            articleId: editingArticleId,
+            title,
+            content,
+            category,
+          }
+        : {
+            initData,
+            title,
+            content,
+            category,
+          };
+
+      const response = await fetch(
+        endpoint,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message ||
+            "تعذر حفظ المقال."
+        );
+      }
+
+      setMessage(
+        editingArticleId
+          ? "تم حفظ التعديلات بنجاح."
+          : "تم حفظ المقال بنجاح."
+      );
+
+      setEditingArticleId(null);
+      setTitle("");
+      setContent("");
+      setCategory("");
+
+      await loadArticles();
+    } catch (err: any) {
+      console.error(err);
+
+      setError(
+        err.message ||
+          "حدث خطأ أثناء حفظ المقال."
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // =========================
+  // Delete Article
+  // =========================
+
+  const deleteArticle = async (
+    articleId: string,
+    articleTitle: string
+  ) => {
+    const confirmed = window.confirm(
+      `هل أنت متأكد من حذف المقال:\n\n"${articleTitle}"؟\n\nلا يمكن التراجع عن هذا الإجراء.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setDeletingId(articleId);
+      setError("");
+      setMessage("");
+
+      const response = await fetch(
+        "/api/articles/delete",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            initData,
+            articleId,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message ||
+            "تعذر حذف المقال."
+        );
+      }
+
+      // إزالة المقال من القائمة فورًا
+      setArticles((current) =>
+        current.filter(
+          (article) =>
+            article.id !== articleId
+        )
+      );
+
+      setMessage(
+        "تم حذف المقال بنجاح."
+      );
+
+      // إذا كان المقال المفتوح هو المحذوف
+      if (editingArticleId === articleId) {
+        setEditingArticleId(null);
+        setTitle("");
+        setContent("");
+        setCategory("");
+        setView("articles");
+      }
+    } catch (err: any) {
+      console.error(err);
+
+      setError(
+        err.message ||
+          "حدث خطأ أثناء حذف المقال."
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  // =========================
+  // Loading
+  // =========================
+
+  if (loading && !user) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 20,
+          fontFamily:
+            "Arial, sans-serif",
+          direction: "rtl",
+        }}
+      >
+        <div
+          style={{
+            textAlign: "center",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 30,
+              marginBottom: 12,
+            }}
+          >
+            ✍️
+          </div>
+
+          <div>
+            جارٍ تسجيل الدخول...
+          </div>
+        </div>
+      </main>
+    );
   }
 
-  function statusText(status: string) {
-    switch (status) {
-      case "draft":
-        return "مسودة";
-      case "published":
-        return "منشور";
-      case "archived":
-        return "مؤرشف";
-      default:
-        return status;
-    }
-  }
+  // =========================
+  // Main UI
+  // =========================
 
   return (
     <main
-      dir="rtl"
       style={{
         minHeight: "100vh",
-        background: "#f5f7fb",
-        color: "#111827",
+        background:
+          "linear-gradient(135deg, #f8fafc, #eef2ff)",
+        padding: 20,
         fontFamily:
-          "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+          "Arial, sans-serif",
+        direction: "rtl",
       }}
     >
       <div
         style={{
-          maxWidth: 700,
+          maxWidth: 850,
           margin: "0 auto",
-          minHeight: "100vh",
-          padding: "20px 16px 90px",
         }}
       >
         {/* Header */}
 
         <header
           style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 24,
+            background: "#ffffff",
+            borderRadius: 20,
+            padding: 20,
+            marginBottom: 20,
+            boxShadow:
+              "0 8px 30px rgba(0,0,0,0.06)",
           }}
         >
-          <div>
-            <div
-              style={{
-                fontSize: 24,
-                fontWeight: 800,
-              }}
-            >
-              مقالات
-            </div>
-
-            <div
-              style={{
-                color: "#6b7280",
-                fontSize: 14,
-                marginTop: 4,
-              }}
-            >
-              Article Studio
-            </div>
-          </div>
-
           <div
             style={{
-              width: 42,
-              height: 42,
-              borderRadius: "50%",
-              background: "#111827",
-              color: "#fff",
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
-              fontWeight: 700,
+              justifyContent:
+                "space-between",
+              gap: 12,
             }}
           >
-            {user?.first_name?.charAt(0) || "م"}
+            <div>
+              <h1
+                style={{
+                  margin: 0,
+                  fontSize: 26,
+                }}
+              >
+                مقالات
+              </h1>
+
+              <p
+                style={{
+                  margin:
+                    "6px 0 0",
+                  color: "#64748b",
+                }}
+              >
+                Article Studio
+              </p>
+            </div>
+
+            {user && (
+              <div
+                style={{
+                  textAlign: "left",
+                  fontSize: 13,
+                  color: "#64748b",
+                }}
+              >
+                {user.first_name ||
+                  user.username ||
+                  "مستخدم"}
+              </div>
+            )}
           </div>
         </header>
 
-        {/* Message */}
+        {/* Messages */}
 
         {message && (
           <div
             style={{
               background: "#ecfdf5",
-              border: "1px solid #a7f3d0",
-              color: "#065f46",
+              color: "#047857",
+              padding: 14,
               borderRadius: 14,
-              padding: "12px 14px",
-              marginBottom: 18,
-              fontSize: 14,
+              marginBottom: 16,
             }}
           >
-            {message}
+            ✅ {message}
           </div>
         )}
 
-        {/* HOME */}
-
-        {view === "home" && (
-          <>
-            <section
-              style={{
-                background: "#111827",
-                color: "#fff",
-                borderRadius: 24,
-                padding: 24,
-                marginBottom: 18,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 14,
-                  opacity: 0.7,
-                  marginBottom: 8,
-                }}
-              >
-                مرحبًا
-              </div>
-
-              <div
-                style={{
-                  fontSize: 25,
-                  fontWeight: 800,
-                  marginBottom: 10,
-                }}
-              >
-                {user?.first_name || "صاحب المقالات"} 👋
-              </div>
-
-              <div
-                style={{
-                  fontSize: 14,
-                  opacity: 0.75,
-                  lineHeight: 1.7,
-                }}
-              >
-                اكتب مقالاتك ونظّم محتواك من مكان واحد.
-              </div>
-            </section>
-
-            <button
-              onClick={openNewArticle}
-              style={{
-                width: "100%",
-                border: "none",
-                borderRadius: 18,
-                padding: 18,
-                background: "#2563eb",
-                color: "#fff",
-                fontSize: 17,
-                fontWeight: 700,
-                cursor: "pointer",
-                marginBottom: 14,
-              }}
-            >
-              ＋ إنشاء مقال جديد
-            </button>
-
-            <button
-              onClick={loadArticles}
-              style={{
-                width: "100%",
-                border: "1px solid #e5e7eb",
-                borderRadius: 18,
-                padding: 18,
-                background: "#fff",
-                color: "#111827",
-                fontSize: 16,
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              {loadingArticles
-                ? "جاري تحميل المقالات..."
-                : "📚 مقالاتي"}
-            </button>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 12,
-                marginTop: 14,
-              }}
-            >
-              <div
-                style={{
-                  background: "#fff",
-                  borderRadius: 18,
-                  padding: 18,
-                  border: "1px solid #e5e7eb",
-                }}
-              >
-                <div style={{ fontSize: 24, marginBottom: 8 }}>
-                  🏷️
-                </div>
-
-                <div style={{ fontWeight: 700 }}>
-                  التصنيفات
-                </div>
-
-                <div
-                  style={{
-                    fontSize: 13,
-                    color: "#9ca3af",
-                    marginTop: 5,
-                  }}
-                >
-                  قريبًا
-                </div>
-              </div>
-
-              <div
-                style={{
-                  background: "#fff",
-                  borderRadius: 18,
-                  padding: 18,
-                  border: "1px solid #e5e7eb",
-                }}
-              >
-                <div style={{ fontSize: 24, marginBottom: 8 }}>
-                  ⚙️
-                </div>
-
-                <div style={{ fontWeight: 700 }}>
-                  الإعدادات
-                </div>
-
-                <div
-                  style={{
-                    fontSize: 13,
-                    color: "#9ca3af",
-                    marginTop: 5,
-                  }}
-                >
-                  قريبًا
-                </div>
-              </div>
-            </div>
-          </>
+        {error && (
+          <div
+            style={{
+              background: "#fef2f2",
+              color: "#b91c1c",
+              padding: 14,
+              borderRadius: 14,
+              marginBottom: 16,
+            }}
+          >
+            ⚠️ {error}
+          </div>
         )}
 
-        {/* EDITOR */}
+        {/* =========================
+            HOME
+        ========================= */}
+
+        {view === "home" && (
+          <section>
+            <div
+              style={{
+                background: "#ffffff",
+                borderRadius: 20,
+                padding: 24,
+                marginBottom: 16,
+                boxShadow:
+                  "0 8px 30px rgba(0,0,0,0.06)",
+              }}
+            >
+              <h2
+                style={{
+                  marginTop: 0,
+                }}
+              >
+                مرحبًا بك 👋
+              </h2>
+
+              <p
+                style={{
+                  color: "#64748b",
+                  lineHeight: 1.8,
+                }}
+              >
+                أنشئ مقالاتك، عدّلها،
+                واحفظها في مكان واحد.
+              </p>
+
+              <button
+                onClick={openNewArticle}
+                style={{
+                  width: "100%",
+                  border: "none",
+                  borderRadius: 14,
+                  padding: 15,
+                  background: "#111827",
+                  color: "#ffffff",
+                  fontSize: 16,
+                  cursor: "pointer",
+                  marginTop: 10,
+                }}
+              >
+                ✍️ كتابة مقال جديد
+              </button>
+
+              <button
+                onClick={openArticles}
+                style={{
+                  width: "100%",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 14,
+                  padding: 15,
+                  background: "#ffffff",
+                  color: "#111827",
+                  fontSize: 16,
+                  cursor: "pointer",
+                  marginTop: 10,
+                }}
+              >
+                📚 مقالاتي
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* =========================
+            EDITOR
+        ========================= */}
 
         {view === "editor" && (
-          <>
+          <section
+            style={{
+              background: "#ffffff",
+              borderRadius: 20,
+              padding: 24,
+              boxShadow:
+                "0 8px 30px rgba(0,0,0,0.06)",
+            }}
+          >
             <button
               onClick={() => {
-                setEditingArticleId(null);
-                setView("articles");
+                setView("home");
+                setMessage("");
+                setError("");
               }}
               style={{
                 border: "none",
                 background: "transparent",
-                padding: 0,
-                marginBottom: 20,
-                fontSize: 15,
                 cursor: "pointer",
-                color: "#2563eb",
+                marginBottom: 18,
+                color: "#64748b",
               }}
             >
               ← العودة
             </button>
 
-            <h1
+            <h2
               style={{
-                fontSize: 26,
-                marginBottom: 20,
+                marginTop: 0,
               }}
             >
               {editingArticleId
                 ? "تعديل المقال"
-                : "إنشاء مقال جديد"}
-            </h1>
+                : "مقال جديد"}
+            </h2>
 
-            {loadingArticle ? (
-              <div
+            <input
+              value={title}
+              onChange={(e) =>
+                setTitle(e.target.value)
+              }
+              placeholder="عنوان المقال"
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: 15,
+                borderRadius: 12,
+                border:
+                  "1px solid #e2e8f0",
+                fontSize: 18,
+                marginBottom: 12,
+                outline: "none",
+              }}
+            />
+
+            <input
+              value={category}
+              onChange={(e) =>
+                setCategory(e.target.value)
+              }
+              placeholder="التصنيف (اختياري)"
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: 14,
+                borderRadius: 12,
+                border:
+                  "1px solid #e2e8f0",
+                fontSize: 15,
+                marginBottom: 12,
+                outline: "none",
+              }}
+            />
+
+            <textarea
+              value={content}
+              onChange={(e) =>
+                setContent(e.target.value)
+              }
+              placeholder="اكتب محتوى المقال هنا..."
+              rows={16}
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: 15,
+                borderRadius: 12,
+                border:
+                  "1px solid #e2e8f0",
+                fontSize: 16,
+                lineHeight: 1.9,
+                resize: "vertical",
+                outline: "none",
+              }}
+            />
+
+            <button
+              onClick={saveArticle}
+              disabled={saving}
+              style={{
+                width: "100%",
+                border: "none",
+                borderRadius: 14,
+                padding: 15,
+                background: saving
+                  ? "#94a3b8"
+                  : "#111827",
+                color: "#ffffff",
+                fontSize: 16,
+                cursor: saving
+                  ? "not-allowed"
+                  : "pointer",
+                marginTop: 14,
+              }}
+            >
+              {saving
+                ? "جارٍ الحفظ..."
+                : editingArticleId
+                ? "💾 حفظ التعديلات"
+                : "💾 حفظ المقال"}
+            </button>
+
+            {/* Delete current article */}
+
+            {editingArticleId && (
+              <button
+                onClick={() =>
+                  deleteArticle(
+                    editingArticleId,
+                    title
+                  )
+                }
+                disabled={
+                  deletingId ===
+                  editingArticleId
+                }
                 style={{
-                  textAlign: "center",
-                  padding: 40,
-                  color: "#6b7280",
+                  width: "100%",
+                  border:
+                    "1px solid #fecaca",
+                  borderRadius: 14,
+                  padding: 15,
+                  background: "#fff",
+                  color: "#dc2626",
+                  fontSize: 16,
+                  cursor:
+                    deletingId ===
+                    editingArticleId
+                      ? "not-allowed"
+                      : "pointer",
+                  marginTop: 10,
                 }}
               >
-                جاري فتح المقال...
-              </div>
-            ) : (
-              <>
-                <input
-                  value={title}
-                  onChange={(e) =>
-                    setTitle(e.target.value)
-                  }
-                  placeholder="عنوان المقال"
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    padding: 16,
-                    borderRadius: 14,
-                    border: "1px solid #d1d5db",
-                    fontSize: 17,
-                    marginBottom: 12,
-                    outline: "none",
-                  }}
-                />
-
-                <input
-                  value={category}
-                  onChange={(e) =>
-                    setCategory(e.target.value)
-                  }
-                  placeholder="التصنيف (اختياري)"
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    padding: 15,
-                    borderRadius: 14,
-                    border: "1px solid #d1d5db",
-                    fontSize: 15,
-                    marginBottom: 12,
-                    outline: "none",
-                  }}
-                />
-
-                <textarea
-                  value={content}
-                  onChange={(e) =>
-                    setContent(e.target.value)
-                  }
-                  placeholder="اكتب محتوى المقال هنا..."
-                  rows={14}
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    padding: 16,
-                    borderRadius: 14,
-                    border: "1px solid #d1d5db",
-                    fontSize: 16,
-                    lineHeight: 1.9,
-                    resize: "vertical",
-                    outline: "none",
-                    marginBottom: 14,
-                  }}
-                />
-
-                <button
-                  onClick={saveArticle}
-                  disabled={saving}
-                  style={{
-                    width: "100%",
-                    border: "none",
-                    borderRadius: 16,
-                    padding: 17,
-                    background: saving
-                      ? "#93c5fd"
-                      : "#2563eb",
-                    color: "#fff",
-                    fontSize: 16,
-                    fontWeight: 700,
-                    cursor: saving
-                      ? "default"
-                      : "pointer",
-                  }}
-                >
-                  {saving
-                    ? "جاري الحفظ..."
-                    : editingArticleId
-                    ? "حفظ التعديلات"
-                    : "حفظ كمسودة"}
-                </button>
-              </>
+                {deletingId ===
+                editingArticleId
+                  ? "جارٍ الحذف..."
+                  : "🗑️ حذف المقال"}
+              </button>
             )}
-          </>
+          </section>
         )}
 
-        {/* ARTICLES */}
+        {/* =========================
+            ARTICLES
+        ========================= */}
 
         {view === "articles" && (
-          <>
+          <section>
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 20,
+                justifyContent:
+                  "space-between",
+                marginBottom: 16,
+                gap: 10,
               }}
             >
               <button
-                onClick={() => setView("home")}
+                onClick={() => {
+                  setView("home");
+                  setMessage("");
+                  setError("");
+                }}
                 style={{
                   border: "none",
-                  background: "transparent",
-                  padding: 0,
-                  fontSize: 15,
+                  background:
+                    "transparent",
                   cursor: "pointer",
-                  color: "#2563eb",
+                  color: "#64748b",
                 }}
               >
                 ← الرئيسية
               </button>
 
-              <h1
+              <button
+                onClick={openNewArticle}
                 style={{
-                  fontSize: 25,
-                  margin: 0,
+                  border: "none",
+                  borderRadius: 12,
+                  padding:
+                    "10px 14px",
+                  background: "#111827",
+                  color: "#fff",
+                  cursor: "pointer",
                 }}
               >
-                مقالاتي
-              </h1>
+                + مقال جديد
+              </button>
             </div>
 
-            <button
-              onClick={openNewArticle}
-              style={{
-                width: "100%",
-                border: "none",
-                borderRadius: 16,
-                padding: 15,
-                background: "#2563eb",
-                color: "#fff",
-                fontSize: 15,
-                fontWeight: 700,
-                cursor: "pointer",
-                marginBottom: 16,
-              }}
-            >
-              ＋ إنشاء مقال جديد
-            </button>
-
-            {loadingArticles ? (
+            {articles.length === 0 ? (
               <div
                 style={{
-                  textAlign: "center",
-                  padding: 40,
-                  color: "#6b7280",
-                }}
-              >
-                جاري تحميل المقالات...
-              </div>
-            ) : articles.length === 0 ? (
-              <div
-                style={{
-                  background: "#fff",
+                  background: "#ffffff",
                   borderRadius: 20,
-                  padding: 35,
+                  padding: 30,
                   textAlign: "center",
-                  border: "1px solid #e5e7eb",
+                  color: "#64748b",
                 }}
               >
                 <div
                   style={{
-                    fontSize: 42,
-                    marginBottom: 12,
+                    fontSize: 40,
+                    marginBottom: 10,
                   }}
                 >
-                  📝
+                  📭
                 </div>
 
-                <div
-                  style={{
-                    fontWeight: 700,
-                    fontSize: 18,
-                    marginBottom: 8,
-                  }}
-                >
-                  لا توجد مقالات بعد
-                </div>
-
-                <div
-                  style={{
-                    color: "#6b7280",
-                    fontSize: 14,
-                  }}
-                >
-                  أنشئ أول مقال لك وسيظهر هنا.
-                </div>
+                لا توجد مقالات حتى الآن.
               </div>
             ) : (
               <div
                 style={{
-                  display: "flex",
-                  flexDirection: "column",
+                  display: "grid",
                   gap: 12,
                 }}
               >
-                {articles.map((article) => (
-                  <button
-                    key={article.id}
-                    onClick={() =>
-                      openArticle(article.id)
-                    }
-                    style={{
-                      width: "100%",
-                      textAlign: "right",
-                      background: "#fff",
-                      border: "1px solid #e5e7eb",
-                      borderRadius: 20,
-                      padding: 18,
-                      cursor: "pointer",
-                    }}
-                  >
+                {articles.map(
+                  (article) => (
                     <div
+                      key={article.id}
                       style={{
-                        display: "flex",
-                        justifyContent:
-                          "space-between",
-                        gap: 10,
-                        alignItems: "flex-start",
+                        background:
+                          "#ffffff",
+                        borderRadius: 18,
+                        padding: 18,
+                        boxShadow:
+                          "0 5px 20px rgba(0,0,0,0.05)",
                       }}
                     >
-                      <div style={{ flex: 1 }}>
-                        <div
-                          style={{
-                            fontSize: 18,
-                            fontWeight: 800,
-                            lineHeight: 1.5,
-                          }}
-                        >
-                          {article.title ||
-                            "بدون عنوان"}
-                        </div>
-
-                        {article.excerpt && (
-                          <div
-                            style={{
-                              color: "#6b7280",
-                              fontSize: 13,
-                              lineHeight: 1.7,
-                              marginTop: 7,
-                            }}
-                          >
-                            {article.excerpt}
-                          </div>
-                        )}
-                      </div>
-
-                      <span
+                      <div
                         style={{
-                          background: "#fef3c7",
-                          color: "#92400e",
-                          padding: "5px 9px",
-                          borderRadius: 10,
-                          fontSize: 12,
-                          whiteSpace: "nowrap",
+                          display: "flex",
+                          alignItems:
+                            "flex-start",
+                          justifyContent:
+                            "space-between",
+                          gap: 12,
                         }}
                       >
-                        {statusText(
-                          article.status
-                        )}
-                      </span>
+                        {/* Article */}
+
+                        <button
+                          onClick={() =>
+                            openArticle(
+                              article.id
+                            )
+                          }
+                          style={{
+                            flex: 1,
+                            border: "none",
+                            background:
+                              "transparent",
+                            textAlign: "right",
+                            cursor: "pointer",
+                            padding: 0,
+                          }}
+                        >
+                          <h3
+                            style={{
+                              margin:
+                                "0 0 8px",
+                              fontSize: 18,
+                              color:
+                                "#111827",
+                            }}
+                          >
+                            {article.title}
+                          </h3>
+
+                          {article.excerpt && (
+                            <p
+                              style={{
+                                margin:
+                                  "0 0 10px",
+                                color:
+                                  "#64748b",
+                                lineHeight: 1.7,
+                                fontSize: 14,
+                              }}
+                            >
+                              {
+                                article.excerpt
+                              }
+                            </p>
+                          )}
+
+                          <div
+                            style={{
+                              display:
+                                "flex",
+                              gap: 10,
+                              flexWrap:
+                                "wrap",
+                              color:
+                                "#94a3b8",
+                              fontSize: 12,
+                            }}
+                          >
+                            <span>
+                              {article.word_count ||
+                                0}{" "}
+                              كلمة
+                            </span>
+
+                            {article.category && (
+                              <span>
+                                📁{" "}
+                                {
+                                  article.category
+                                }
+                              </span>
+                            )}
+
+                            <span>
+                              {article.status ===
+                              "draft"
+                                ? "مسودة"
+                                : article.status}
+                            </span>
+                          </div>
+                        </button>
+
+                        {/* Delete */}
+
+                        <button
+                          onClick={() =>
+                            deleteArticle(
+                              article.id,
+                              article.title
+                            )
+                          }
+                          disabled={
+                            deletingId ===
+                            article.id
+                          }
+                          aria-label="حذف المقال"
+                          style={{
+                            flexShrink: 0,
+                            width: 42,
+                            height: 42,
+                            border:
+                              "1px solid #fee2e2",
+                            borderRadius: 12,
+                            background:
+                              "#fff",
+                            color:
+                              "#dc2626",
+                            cursor:
+                              deletingId ===
+                              article.id
+                                ? "not-allowed"
+                                : "pointer",
+                            fontSize: 18,
+                          }}
+                        >
+                          {deletingId ===
+                          article.id
+                            ? "..."
+                            : "🗑️"}
+                        </button>
+                      </div>
                     </div>
-
-                    <div
-                      style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: 8,
-                        marginTop: 14,
-                        color: "#6b7280",
-                        fontSize: 12,
-                      }}
-                    >
-                      {article.category && (
-                        <span>
-                          🏷️ {article.category}
-                        </span>
-                      )}
-
-                      <span>
-                        📅{" "}
-                        {formatDate(
-                          article.updated_at
-                        )}
-                      </span>
-
-                      <span>
-                        📝{" "}
-                        {article.word_count || 0} كلمة
-                      </span>
-                    </div>
-                  </button>
-                ))}
+                  )
+                )}
               </div>
             )}
-          </>
+          </section>
         )}
       </div>
-
-      {/* Bottom Navigation */}
-
-      <nav
-        style={{
-          position: "fixed",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          background: "rgba(255,255,255,0.96)",
-          borderTop: "1px solid #e5e7eb",
-          padding: "10px 16px",
-          display: "flex",
-          justifyContent: "center",
-          backdropFilter: "blur(10px)",
-        }}
-      >
-        <div
-          style={{
-            width: "100%",
-            maxWidth: 700,
-            display: "flex",
-            justifyContent: "space-around",
-          }}
-        >
-          <button
-            onClick={() => setView("home")}
-            style={{
-              border: "none",
-              background: "transparent",
-              cursor: "pointer",
-              fontSize: 13,
-            }}
-          >
-            🏠
-            <div>الرئيسية</div>
-          </button>
-
-          <button
-            onClick={openNewArticle}
-            style={{
-              width: 48,
-              height: 48,
-              borderRadius: "50%",
-              border: "none",
-              background: "#2563eb",
-              color: "#fff",
-              fontSize: 24,
-              cursor: "pointer",
-              marginTop: -25,
-            }}
-          >
-            +
-          </button>
-
-          <button
-            onClick={loadArticles}
-            style={{
-              border: "none",
-              background: "transparent",
-              cursor: "pointer",
-              fontSize: 13,
-            }}
-          >
-            📚
-            <div>مقالاتي</div>
-          </button>
-        </div>
-      </nav>
     </main>
   );
 }
