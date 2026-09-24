@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import RichEditor from "./components/RichEditor";
 
 type User = {
   id: string;
@@ -164,23 +165,29 @@ export default function Home() {
   };
 
   // =========================
-  // Open Articles View
+  // Open Articles
   // =========================
 
   const openArticles = async () => {
+    setMessage("");
+    setError("");
+
     setView("articles");
+
     await loadArticles();
   };
 
   // =========================
-  // Open New Article Editor
+  // New Article
   // =========================
 
   const openNewArticle = () => {
     setEditingArticleId(null);
+
     setTitle("");
     setContent("");
     setCategory("");
+
     setMessage("");
     setError("");
 
@@ -224,12 +231,22 @@ export default function Home() {
       const article: Article = data.article;
 
       setEditingArticleId(article.id);
+
       setTitle(article.title || "");
+
       setCategory(article.category || "");
+
+      /*
+       * المقالات الجديدة ستكون HTML.
+       * المقالات القديمة قد تكون JSON بسيطًا.
+       */
 
       let extractedContent = "";
 
-      if (
+      if (article.html_content) {
+        extractedContent =
+          article.html_content;
+      } else if (
         article.content &&
         Array.isArray(article.content.content)
       ) {
@@ -240,32 +257,17 @@ export default function Home() {
                 node.type === "paragraph" &&
                 Array.isArray(node.content)
               ) {
-                return node.content
+                return `<p>${node.content
                   .map(
                     (item: any) =>
                       item.text || ""
                   )
-                  .join("");
+                  .join("")}</p>`;
               }
 
               return "";
             })
-            .join("\n");
-      }
-
-      if (!extractedContent && article.html_content) {
-        extractedContent =
-          article.html_content
-            .replace(/<br\s*\/?>/gi, "\n")
-            .replace(
-              /<\/p>/gi,
-              "\n"
-            )
-            .replace(
-              /<[^>]+>/g,
-              ""
-            )
-            .trim();
+            .join("");
       }
 
       setContent(extractedContent);
@@ -289,12 +291,16 @@ export default function Home() {
 
   const saveArticle = async () => {
     if (!title.trim()) {
-      setError("اكتب عنوان المقال أولًا.");
+      setError(
+        "اكتب عنوان المقال أولًا."
+      );
       return;
     }
 
     if (!content.trim()) {
-      setError("اكتب محتوى المقال أولًا.");
+      setError(
+        "اكتب محتوى المقال أولًا."
+      );
       return;
     }
 
@@ -307,10 +313,17 @@ export default function Home() {
         ? "/api/articles/update"
         : "/api/articles";
 
+      /*
+       * نرسل HTML إلى API.
+       * الـ API الحالي سيحفظه داخل
+       * html_content ويحتفظ بالمقال.
+       */
+
       const body = editingArticleId
         ? {
             initData,
-            articleId: editingArticleId,
+            articleId:
+              editingArticleId,
             title,
             content,
             category,
@@ -327,7 +340,8 @@ export default function Home() {
         {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type":
+              "application/json",
           },
           body: JSON.stringify(body),
         }
@@ -349,6 +363,7 @@ export default function Home() {
       );
 
       setEditingArticleId(null);
+
       setTitle("");
       setContent("");
       setCategory("");
@@ -382,6 +397,7 @@ export default function Home() {
 
     try {
       setDeletingId(articleId);
+
       setError("");
       setMessage("");
 
@@ -390,7 +406,8 @@ export default function Home() {
         {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type":
+              "application/json",
           },
           body: JSON.stringify({
             initData,
@@ -408,7 +425,6 @@ export default function Home() {
         );
       }
 
-      // إزالة المقال من القائمة فورًا
       setArticles((current) =>
         current.filter(
           (article) =>
@@ -420,12 +436,16 @@ export default function Home() {
         "تم حذف المقال بنجاح."
       );
 
-      // إذا كان المقال المفتوح هو المحذوف
-      if (editingArticleId === articleId) {
+      if (
+        editingArticleId ===
+        articleId
+      ) {
         setEditingArticleId(null);
+
         setTitle("");
         setContent("");
         setCategory("");
+
         setView("articles");
       }
     } catch (err: any) {
@@ -441,7 +461,7 @@ export default function Home() {
   };
 
   // =========================
-  // Loading
+  // Loading Screen
   // =========================
 
   if (loading && !user) {
@@ -451,7 +471,8 @@ export default function Home() {
           minHeight: "100vh",
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
+          justifyContent:
+            "center",
           padding: 20,
           fontFamily:
             "Arial, sans-serif",
@@ -517,7 +538,8 @@ export default function Home() {
           <div
             style={{
               display: "flex",
-              alignItems: "center",
+              alignItems:
+                "center",
               justifyContent:
                 "space-between",
               gap: 12,
@@ -565,7 +587,8 @@ export default function Home() {
         {message && (
           <div
             style={{
-              background: "#ecfdf5",
+              background:
+                "#ecfdf5",
               color: "#047857",
               padding: 14,
               borderRadius: 14,
@@ -579,7 +602,8 @@ export default function Home() {
         {error && (
           <div
             style={{
-              background: "#fef2f2",
+              background:
+                "#fef2f2",
               color: "#b91c1c",
               padding: 14,
               borderRadius: 14,
@@ -598,7 +622,8 @@ export default function Home() {
           <section>
             <div
               style={{
-                background: "#ffffff",
+                background:
+                  "#ffffff",
                 borderRadius: 20,
                 padding: 24,
                 marginBottom: 16,
@@ -616,25 +641,31 @@ export default function Home() {
 
               <p
                 style={{
-                  color: "#64748b",
+                  color:
+                    "#64748b",
                   lineHeight: 1.8,
                 }}
               >
-                أنشئ مقالاتك، عدّلها،
+                أنشئ مقالاتك،
+                نسّقها، عدّلها،
                 واحفظها في مكان واحد.
               </p>
 
               <button
-                onClick={openNewArticle}
+                onClick={
+                  openNewArticle
+                }
                 style={{
                   width: "100%",
                   border: "none",
                   borderRadius: 14,
                   padding: 15,
-                  background: "#111827",
+                  background:
+                    "#111827",
                   color: "#ffffff",
                   fontSize: 16,
-                  cursor: "pointer",
+                  cursor:
+                    "pointer",
                   marginTop: 10,
                 }}
               >
@@ -642,16 +673,22 @@ export default function Home() {
               </button>
 
               <button
-                onClick={openArticles}
+                onClick={
+                  openArticles
+                }
                 style={{
                   width: "100%",
-                  border: "1px solid #e2e8f0",
+                  border:
+                    "1px solid #e2e8f0",
                   borderRadius: 14,
                   padding: 15,
-                  background: "#ffffff",
-                  color: "#111827",
+                  background:
+                    "#ffffff",
+                  color:
+                    "#111827",
                   fontSize: 16,
-                  cursor: "pointer",
+                  cursor:
+                    "pointer",
                   marginTop: 10,
                 }}
               >
@@ -668,7 +705,8 @@ export default function Home() {
         {view === "editor" && (
           <section
             style={{
-              background: "#ffffff",
+              background:
+                "#ffffff",
               borderRadius: 20,
               padding: 24,
               boxShadow:
@@ -683,10 +721,14 @@ export default function Home() {
               }}
               style={{
                 border: "none",
-                background: "transparent",
-                cursor: "pointer",
-                marginBottom: 18,
-                color: "#64748b",
+                background:
+                  "transparent",
+                cursor:
+                  "pointer",
+                marginBottom:
+                  18,
+                color:
+                  "#64748b",
               }}
             >
               ← العودة
@@ -695,6 +737,7 @@ export default function Home() {
             <h2
               style={{
                 marginTop: 0,
+                marginBottom: 18,
               }}
             >
               {editingArticleId
@@ -702,82 +745,101 @@ export default function Home() {
                 : "مقال جديد"}
             </h2>
 
+            {/* Title */}
+
             <input
               value={title}
               onChange={(e) =>
-                setTitle(e.target.value)
+                setTitle(
+                  e.target.value
+                )
               }
               placeholder="عنوان المقال"
               style={{
-                width: "100%",
-                boxSizing: "border-box",
+                width:
+                  "100%",
+                boxSizing:
+                  "border-box",
                 padding: 15,
-                borderRadius: 12,
+                borderRadius:
+                  12,
                 border:
                   "1px solid #e2e8f0",
-                fontSize: 18,
-                marginBottom: 12,
-                outline: "none",
+                fontSize: 20,
+                fontWeight:
+                  600,
+                marginBottom:
+                  12,
+                outline:
+                  "none",
               }}
             />
+
+            {/* Category */}
 
             <input
               value={category}
               onChange={(e) =>
-                setCategory(e.target.value)
+                setCategory(
+                  e.target.value
+                )
               }
               placeholder="التصنيف (اختياري)"
               style={{
-                width: "100%",
-                boxSizing: "border-box",
+                width:
+                  "100%",
+                boxSizing:
+                  "border-box",
                 padding: 14,
-                borderRadius: 12,
+                borderRadius:
+                  12,
                 border:
                   "1px solid #e2e8f0",
                 fontSize: 15,
-                marginBottom: 12,
-                outline: "none",
+                marginBottom:
+                  14,
+                outline:
+                  "none",
               }}
             />
 
-            <textarea
+            {/* Rich Editor */}
+
+            <RichEditor
               value={content}
-              onChange={(e) =>
-                setContent(e.target.value)
+              onChange={
+                setContent
               }
-              placeholder="اكتب محتوى المقال هنا..."
-              rows={16}
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                padding: 15,
-                borderRadius: 12,
-                border:
-                  "1px solid #e2e8f0",
-                fontSize: 16,
-                lineHeight: 1.9,
-                resize: "vertical",
-                outline: "none",
-              }}
             />
+
+            {/* Save */}
 
             <button
-              onClick={saveArticle}
+              onClick={
+                saveArticle
+              }
               disabled={saving}
               style={{
-                width: "100%",
-                border: "none",
-                borderRadius: 14,
+                width:
+                  "100%",
+                border:
+                  "none",
+                borderRadius:
+                  14,
                 padding: 15,
-                background: saving
-                  ? "#94a3b8"
-                  : "#111827",
-                color: "#ffffff",
+                background:
+                  saving
+                    ? "#94a3b8"
+                    : "#111827",
+                color:
+                  "#ffffff",
                 fontSize: 16,
-                cursor: saving
-                  ? "not-allowed"
-                  : "pointer",
-                marginTop: 14,
+                cursor:
+                  saving
+                    ? "not-allowed"
+                    : "pointer",
+                marginTop:
+                  14,
               }}
             >
               {saving
@@ -787,7 +849,7 @@ export default function Home() {
                 : "💾 حفظ المقال"}
             </button>
 
-            {/* Delete current article */}
+            {/* Delete */}
 
             {editingArticleId && (
               <button
@@ -802,20 +864,25 @@ export default function Home() {
                   editingArticleId
                 }
                 style={{
-                  width: "100%",
+                  width:
+                    "100%",
                   border:
                     "1px solid #fecaca",
-                  borderRadius: 14,
+                  borderRadius:
+                    14,
                   padding: 15,
-                  background: "#fff",
-                  color: "#dc2626",
+                  background:
+                    "#ffffff",
+                  color:
+                    "#dc2626",
                   fontSize: 16,
                   cursor:
                     deletingId ===
                     editingArticleId
                       ? "not-allowed"
                       : "pointer",
-                  marginTop: 10,
+                  marginTop:
+                    10,
                 }}
               >
                 {deletingId ===
@@ -831,87 +898,118 @@ export default function Home() {
             ARTICLES
         ========================= */}
 
-        {view === "articles" && (
+        {view ===
+          "articles" && (
           <section>
             <div
               style={{
-                display: "flex",
-                alignItems: "center",
+                display:
+                  "flex",
+                alignItems:
+                  "center",
                 justifyContent:
                   "space-between",
-                marginBottom: 16,
+                marginBottom:
+                  16,
                 gap: 10,
               }}
             >
               <button
                 onClick={() => {
-                  setView("home");
-                  setMessage("");
+                  setView(
+                    "home"
+                  );
+                  setMessage(
+                    ""
+                  );
                   setError("");
                 }}
                 style={{
-                  border: "none",
+                  border:
+                    "none",
                   background:
                     "transparent",
-                  cursor: "pointer",
-                  color: "#64748b",
+                  cursor:
+                    "pointer",
+                  color:
+                    "#64748b",
                 }}
               >
                 ← الرئيسية
               </button>
 
               <button
-                onClick={openNewArticle}
+                onClick={
+                  openNewArticle
+                }
                 style={{
-                  border: "none",
-                  borderRadius: 12,
+                  border:
+                    "none",
+                  borderRadius:
+                    12,
                   padding:
                     "10px 14px",
-                  background: "#111827",
-                  color: "#fff",
-                  cursor: "pointer",
+                  background:
+                    "#111827",
+                  color:
+                    "#fff",
+                  cursor:
+                    "pointer",
                 }}
               >
                 + مقال جديد
               </button>
             </div>
 
-            {articles.length === 0 ? (
+            {articles.length ===
+            0 ? (
               <div
                 style={{
-                  background: "#ffffff",
-                  borderRadius: 20,
+                  background:
+                    "#ffffff",
+                  borderRadius:
+                    20,
                   padding: 30,
-                  textAlign: "center",
-                  color: "#64748b",
+                  textAlign:
+                    "center",
+                  color:
+                    "#64748b",
                 }}
               >
                 <div
                   style={{
                     fontSize: 40,
-                    marginBottom: 10,
+                    marginBottom:
+                      10,
                   }}
                 >
                   📭
                 </div>
 
-                لا توجد مقالات حتى الآن.
+                لا توجد مقالات
+                حتى الآن.
               </div>
             ) : (
               <div
                 style={{
-                  display: "grid",
+                  display:
+                    "grid",
                   gap: 12,
                 }}
               >
                 {articles.map(
-                  (article) => (
+                  (
+                    article
+                  ) => (
                     <div
-                      key={article.id}
+                      key={
+                        article.id
+                      }
                       style={{
                         background:
                           "#ffffff",
-                        borderRadius: 18,
+                        borderRadius:
+                          18,
                         padding: 18,
                         boxShadow:
                           "0 5px 20px rgba(0,0,0,0.05)",
@@ -919,7 +1017,8 @@ export default function Home() {
                     >
                       <div
                         style={{
-                          display: "flex",
+                          display:
+                            "flex",
                           alignItems:
                             "flex-start",
                           justifyContent:
@@ -937,24 +1036,31 @@ export default function Home() {
                           }
                           style={{
                             flex: 1,
-                            border: "none",
+                            border:
+                              "none",
                             background:
                               "transparent",
-                            textAlign: "right",
-                            cursor: "pointer",
-                            padding: 0,
+                            textAlign:
+                              "right",
+                            cursor:
+                              "pointer",
+                            padding:
+                              0,
                           }}
                         >
                           <h3
                             style={{
                               margin:
                                 "0 0 8px",
-                              fontSize: 18,
+                              fontSize:
+                                18,
                               color:
                                 "#111827",
                             }}
                           >
-                            {article.title}
+                            {
+                              article.title
+                            }
                           </h3>
 
                           {article.excerpt && (
@@ -964,8 +1070,10 @@ export default function Home() {
                                   "0 0 10px",
                                 color:
                                   "#64748b",
-                                lineHeight: 1.7,
-                                fontSize: 14,
+                                lineHeight:
+                                  1.7,
+                                fontSize:
+                                  14,
                               }}
                             >
                               {
@@ -983,7 +1091,8 @@ export default function Home() {
                                 "wrap",
                               color:
                                 "#94a3b8",
-                              fontSize: 12,
+                              fontSize:
+                                12,
                             }}
                           >
                             <span>
@@ -1025,14 +1134,16 @@ export default function Home() {
                           }
                           aria-label="حذف المقال"
                           style={{
-                            flexShrink: 0,
+                            flexShrink:
+                              0,
                             width: 42,
                             height: 42,
                             border:
                               "1px solid #fee2e2",
-                            borderRadius: 12,
+                            borderRadius:
+                              12,
                             background:
-                              "#fff",
+                              "#ffffff",
                             color:
                               "#dc2626",
                             cursor:
@@ -1040,7 +1151,8 @@ export default function Home() {
                               article.id
                                 ? "not-allowed"
                                 : "pointer",
-                            fontSize: 18,
+                            fontSize:
+                              18,
                           }}
                         >
                           {deletingId ===
